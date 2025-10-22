@@ -1,0 +1,10 @@
+# Development dependencies - sync with pyproject.toml [project.optional-dependencies.dev]
+# Includes all runtime dependencies plus development tools
+-r requirements.txt
+
+# Linting and formatting
+ruff>=0.1.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0

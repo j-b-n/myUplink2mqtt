@@ -1,0 +1,122 @@
+# Docker Compose configuration for myUplink2mqtt
+# This file defines the containerized deployment of the myUplink2mqtt service
+
+version: '3.8'
+
+services:
+  myuplink2mqtt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myuplink2mqtt
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Environment variables - can be overridden via .env file or environment
+    environment:
+      # myUplink API Configuration
+      # These can be set via environment variables or .env file
+      # MYUPLINK_CLIENT_ID: ""          # Set via env or .env file
+      # MYUPLINK_CLIENT_SECRET: ""      # Set via env or .env file
+
+      # MQTT Configuration
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-mosquitto}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
+      # MQTT_USERNAME: ${MQTT_USERNAME}  # Optional: set via env or .env file
+      # MQTT_PASSWORD: ${MQTT_PASSWORD}  # Optional: set via env or .env file
+      MQTT_BASE_TOPIC: ${MQTT_BASE_TOPIC:-myuplink}
+
+      # Home Assistant Configuration
+      HA_DISCOVERY_PREFIX: ${HA_DISCOVERY_PREFIX:-homeassistant}
+
+      # Polling Configuration
+      POLL_INTERVAL: ${POLL_INTERVAL:-300}
+
+      # Logging Level
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+    # Volume mounts for configuration and data
+    volumes:
+      # OAuth token storage - persists across container restarts
+      - myuplink_tokens:/home/appuser/.myUplink_API_Token.json:ro
+      # Optional: Mount config file if it exists
+      # - /home/pi/.myUplink_API_Config.json:/home/appuser/.myUplink_API_Config.json:ro
+
+      # Network configuration
+    networks:
+      - myuplink-net
+
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    # Depends on MQTT broker if using the included one
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  # Optional: Include Mosquitto MQTT broker in the same stack
+  mosquitto:
+    image: eclipse-mosquitto:2-alpine
+    container_name: mosquitto
+    restart: unless-stopped
+
+    # Ports - expose MQTT
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+
+    # Configuration volume
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check
+    healthcheck:
+      test: [ "CMD", "mosquitto_sub", "-h", "localhost", "-t", "$SYS/broker/uptime" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - myuplink-net
+
+# Volumes for persistent data
+volumes:
+  myuplink_tokens:
+    driver: local
+  mosquitto_config:
+    driver: local
+  mosquitto_data:
+    driver: local
+  mosquitto_logs:
+    driver: local
+
+# Networks
+networks:
+  myuplink-net:
+    driver: bridge

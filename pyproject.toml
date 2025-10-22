@@ -1,0 +1,165 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myUplink2mqtt"
+version = "0.1.0"
+description = "A Python utility to bridge myUplink API data to MQTT with Home Assistant auto-discovery support"
+readme = "README.md"
+license = {text = "GPL-3.0-only"}
+requires-python = ">=3.8"
+authors = [
+    {name = "j-b-n"},
+]
+keywords = ["myuplink", "mqtt", "home-assistant", "hvac", "heat-pump"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+]
+dependencies = [
+    "aiohttp>=3.7.3",
+    "myuplink>=0.7.0",
+    "paho-mqtt>=1.6.1",
+    "requests-oauthlib>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/j-b-n/myUplink2mqtt"
+Repository = "https://github.com/j-b-n/myUplink2mqtt.git"
+Issues = "https://github.com/j-b-n/myUplink2mqtt/issues"
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.pytest.ini_options]
+# Pytest configuration
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+# Target Python 3.8+
+target-version = "py38"
+line-length = 100
+
+# Enable the pycodestyle (E, W) and Pyflakes (F) rules by default
+# Additional rules can be enabled by adding them here
+extend-select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "I",      # isort
+    "RUF",    # Ruff-specific rules
+    "UP",     # pyupgrade
+    "N",      # pep8-naming
+    "BLE",    # flake8-blind-except
+    "A",      # flake8-builtins
+    "C90",    # mccabe
+    "D",      # pydocstyle
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "D100",   # Missing module docstring
+    "D101",   # Missing class docstring
+    "D102",   # Missing method docstring
+    "D103",   # Missing function docstring
+    "D104",   # Missing package docstring
+    "D105",   # Missing magic method docstring
+    "D107",   # Missing __init__ docstring
+    "D203",   # 1 blank line required before class docstring
+    "D213",   # Multi-line docstring summary should start at second line
+    "A003",   # Class attribute is shadowing a builtin
+    "BLE001", # Broad exception catches (acceptable for error handling)
+]
+
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+]
+
+[tool.ruff.lint]
+# Configuration for the linter
+ignore = [
+    "E501",   # Line too long
+    "D100",   # Missing module docstring
+    "D101",   # Missing class docstring
+    "D102",   # Missing method docstring
+    "D103",   # Missing function docstring
+    "D104",   # Missing package docstring
+    "D105",   # Missing magic method docstring
+    "D107",   # Missing __init__ docstring
+    "D203",   # 1 blank line required before class docstring
+    "D213",   # Multi-line docstring summary should start at second line
+    "A003",   # Class attribute is shadowing a builtin
+    "BLE001", # Broad exception catches (acceptable for error handling)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore specific rules for certain files
+"tests/**" = ["D"]  # Ignore docstring requirements in tests
+"demo/**" = ["D"]   # Ignore docstring requirements in demos
+"__init__.py" = ["D104"]  # Ignore missing package docstring
+
+[tool.isort]
+# isort configuration (used by ruff's I rules)
+profile = "black"
+line_length = 100
+skip_glob = [".venv", "venv", "build", "dist"]
+
+[tool.coverage.run]
+# Coverage.py configuration
+source = ["myuplink2mqtt", "tests"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+# Coverage report configuration
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.pylint.messages_control]
+# Pylint configuration
+disable = [
+    "logging-fstring-interpolation",  # Allow f-strings in logging for readability
+]

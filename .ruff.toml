@@ -1,0 +1,60 @@
+# Ruff configuration file
+# This file mirrors the [tool.ruff] configuration in pyproject.toml
+# for projects that prefer to keep ruff config separate
+
+target-version = "py38"
+line-length = 100
+
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+]
+
+[lint]
+# Core rules enabled
+extend-select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "I",      # isort
+    "RUF",    # Ruff-specific rules
+    "UP",     # pyupgrade
+    "N",      # pep8-naming
+    "BLE",    # flake8-blind-except
+    "A",      # flake8-builtins
+    "C90",    # mccabe
+    "D",      # pydocstyle
+]
+
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "D100",   # Missing module docstring
+    "D101",   # Missing class docstring
+    "D102",   # Missing method docstring
+    "D103",   # Missing function docstring
+    "D104",   # Missing package docstring
+    "D105",   # Missing magic method docstring
+    "D107",   # Missing __init__ docstring
+    "D203",   # 1 blank line required before class docstring
+    "D213",   # Multi-line docstring summary should start at second line
+    "A003",   # Class attribute is shadowing a builtin
+    "BLE001", # Broad exception catches (acceptable for error handling)
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["D"]
+"demo/**" = ["D"]
+"__init__.py" = ["D104"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true

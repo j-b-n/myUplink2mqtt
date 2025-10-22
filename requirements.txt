@@ -1,0 +1,5 @@
+# Runtime dependencies - sync with pyproject.toml [project.dependencies]
+aiohttp>=3.7.3
+myuplink>=0.7.0
+paho-mqtt>=1.6.1
+requests-oauthlib>=2.0.0

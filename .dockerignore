@@ -1,0 +1,27 @@
+# Docker ignore file - exclude unnecessary files from Docker build context
+.git/
+.gitignore
+.github/
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+.env
+.env.local
+docker-compose.override.yml
+Makefile
+README.md
+LICENSE
+docs/
+demo/
+tests/
+scripts/
+*.md
+.dockerignore
