@@ -348,6 +348,38 @@ def get_device_points(myuplink, device_id, parameters=None, language="en-US"):
         return None
 
 
+def clean_parameter_name(parameter_name):
+    """Clean parameter name by removing soft hyphens and trimming whitespace.
+
+    Removes special Unicode characters like soft hyphens (\u00ad), carriage returns,
+    line feeds, and normalizes whitespace that can appear in parameter names from the API.
+
+    Args:
+        parameter_name (str): The parameter name to clean.
+
+    Returns:
+        str: Cleaned parameter name with special characters removed and whitespace normalized.
+
+    """
+    if not parameter_name:
+        return parameter_name
+
+    # Remove soft hyphens (Unicode \u00ad)
+    cleaned = parameter_name.replace("\u00ad", "")
+
+    # Remove carriage returns and line feeds
+    cleaned = cleaned.replace("\r", "").replace("\n", "")
+
+    # Replace multiple consecutive spaces with a single space
+    while "  " in cleaned:
+        cleaned = cleaned.replace("  ", " ")
+
+    # Trim leading/trailing whitespace
+    cleaned = cleaned.strip()
+
+    return cleaned
+
+
 def format_parameter_value(point, display_name=None):
     """Format parameter value with appropriate units based on parameter name.
 
@@ -392,8 +424,8 @@ def get_parameter_display_name(point):
     """
     parameter_name = point["parameterName"]
 
-    # Clean up soft hyphens and trim whitespace
-    parameter_name = parameter_name.replace("\u00ad", "").strip()
+    # Clean up soft hyphens and trim whitespace using the utility function
+    parameter_name = clean_parameter_name(parameter_name)
 
     # Clean up device name prefix pattern like "SAK (..." -> extract content in parens
     # Pattern: "WORD (" where WORD is 1+ word characters
@@ -440,3 +472,91 @@ def get_parameter_display_name(point):
         return f"No Label ({parameter_id})"
 
     return parameter_name
+
+
+def save_api_data_to_file(myuplink, filename):
+    """Save all myUplink API data to a JSON file.
+
+    Retrieves all systems, devices, and data points from the myUplink API
+    and saves them to a JSON file in a structured format.
+
+    Args:
+        myuplink: OAuth2Session for myUplink API.
+        filename (str): Path to the output JSON file.
+
+    Returns:
+        bool: True if successful, False otherwise.
+
+    """
+    logger.info("Retrieving all data from myUplink API...")
+
+    # Get all systems
+    systems = get_systems(myuplink)
+    if systems is None:
+        logger.error("Failed to retrieve systems")
+        return False
+
+    logger.info(f"Retrieved {len(systems)} system(s)")
+
+    # Build complete data structure
+    data = {"systems": []}
+
+    for system in systems:
+        system_id = system["systemId"]
+        system_name = system["name"]
+        logger.info(f"Processing system: {system_name} (ID: {system_id})")
+
+        system_data = {
+            "systemId": system_id,
+            "name": system_name,
+            "devices": [],
+        }
+
+        # Process each device in the system
+        for device in system["devices"]:
+            device_id = device["id"]
+
+            # Get device details
+            device_details = get_device_details(myuplink, device_id)
+            if device_details is None:
+                logger.warning(f"Could not retrieve device details for {device_id}")
+                continue
+
+            logger.info(f"Processing device: {device_details['product']['name']} ({device_id})")
+
+            # Get all data points
+            points_data = get_device_points(myuplink, device_id)
+            if points_data is None:
+                logger.warning(f"Could not retrieve data points for {device_id}")
+                continue
+
+            logger.info(f"Retrieved {len(points_data)} data points")
+
+            # Clean parameter names in all data points
+            for point in points_data:
+                if "parameterName" in point:
+                    point["parameterName"] = clean_parameter_name(point["parameterName"])
+
+            # Build device data structure
+            device_data = {
+                "id": device_id,
+                "product": device_details.get("product", {}),
+                "serialNumber": device_details.get("serialNumber", ""),
+                "connectionState": device_details.get("connectionState", ""),
+                "currentFwVersion": device_details.get("currentFwVersion", ""),
+                "dataPoints": points_data,
+            }
+
+            system_data["devices"].append(device_data)
+
+        data["systems"].append(system_data)
+
+    # Save to file
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Successfully saved API data to {filename}")
+        return True
+    except OSError as e:
+        logger.error(f"Failed to write to file {filename}: {e}")
+        return False

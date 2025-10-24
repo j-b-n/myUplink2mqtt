@@ -29,6 +29,7 @@ from myuplink2mqtt.utils.myuplink_utils import (
     get_device_points,
     get_parameter_display_name,
     get_systems,
+    save_api_data_to_file,
 )
 
 # Configure logging
@@ -120,6 +121,14 @@ def parse_arguments():
     parser.add_argument("--once", action="store_true", help="Run once and exit (single poll cycle)")
 
     parser.add_argument("--show-config", action="store_true", help="Display configuration and exit")
+
+    parser.add_argument(
+        "--save",
+        nargs="?",
+        const="/tmp/myuplink.json",
+        metavar="FILE",
+        help="Save all API data to JSON file and exit (default: /tmp/myuplink.json)",
+    )
 
     parser.add_argument(
         "-p",
@@ -537,6 +546,29 @@ def main():
     if args.show_config:
         show_configuration()
         sys.exit(0)
+
+    # Handle --save mode: save API data to file and exit
+    if args.save:
+        logger.info("=" * 70)
+        logger.info("myUplink API Data Export to JSON")
+        logger.info("=" * 70)
+        logger.info("")
+
+        # Set up OAuth session
+        myuplink = setup_oauth_session()
+        if myuplink is None:
+            sys.exit(1)
+
+        # Save data to file
+        logger.info(f"Saving all API data to: {args.save}")
+        success = save_api_data_to_file(myuplink, args.save)
+
+        if success:
+            logger.info("Data export completed successfully")
+            sys.exit(0)
+        else:
+            logger.error("Data export failed")
+            sys.exit(1)
 
     # Log banner (only shown if not silent mode)
     logger.info("=" * 70)
