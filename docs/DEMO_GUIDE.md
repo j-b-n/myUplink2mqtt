@@ -241,7 +241,59 @@ Edit the demo script to specify your own parameter IDs:
 SPECIFIC_PARAMETERS = ["40004", "40005", "40013"]  # Modify this list
 ```
 
-### 6. demo_mqtt.py
+### 6. demo_enum_parameters.py
+
+**Purpose**: Display all parameters with enumerated (enum) values
+
+**What it does**:
+
+- Finds all parameters that have enumValues (predefined option lists)
+- Shows the current value's text representation
+- Lists all available options for each enum parameter
+- Useful for understanding controllable/selectable parameters
+
+**Usage**:
+
+```bash
+python demo/demo_enum_parameters.py
+```
+
+**Example output**:
+
+```
+Heating: Permitted
+  ID: 1780 | Category: HIU
+  Current value: 2.0
+  Available options:
+    - 0: Not permitted
+    - 1: Blocked
+    - 2: Permitted
+
+Operating mode: Outdoor cntrl
+  ID: 3751 | Category: HIU
+  Current value: 0.0
+  Available options:
+    - 0: Outdoor cntrl
+    - 1: Outdoor cntrl. + room sensor
+    - 2: Indoor control
+```
+
+**Use cases**:
+
+- Discover parameters with selectable options (modes, states, settings)
+- Understand available operating modes
+- Document system configuration options
+- Identify writable parameters that accept specific values
+- Prepare for implementing control features
+
+**Key features**:
+
+- Automatically converts numeric values to human-readable text
+- Shows all available options with their numeric values
+- Displays parameter category and ID for reference
+- Filters out numeric-only parameters (temperature, pressure, etc.)
+
+### 7. demo_mqtt.py
 
 **Purpose**: Test MQTT broker connectivity
 
@@ -287,7 +339,7 @@ Connecting...
 - Troubleshoot MQTT connection issues
 - Confirm network connectivity to broker
 
-### 7. demo_mqtt_list_topics.py
+### 8. demo_mqtt_list_topics.py
 
 **Purpose**: List all current MQTT topics and their values
 
@@ -326,6 +378,84 @@ Value: {"name": "Current Outdoor Temperature", ...}
 - Debug topic naming conventions
 - Verify Home Assistant auto-discovery configuration
 - Monitor real-time sensor data
+
+### 9. demo_systems_me.py
+
+**Purpose**: Retrieve and display raw system data from the API
+
+**What it does**:
+
+- Calls the `/v2/systems/me` API endpoint directly
+- Returns raw JSON response from the myUplink API
+- Shows complete system structure and metadata
+- Useful for understanding API response format
+
+**Usage**:
+
+```bash
+python demo/demo_systems_me.py
+```
+
+**Example output**:
+
+```json
+[
+  {
+    "systemId": "123456",
+    "name": "My Heat Pump System",
+    "securityLevel": "Admin",
+    "hasAlarm": false,
+    "devices": [
+      {
+        "id": "abc123",
+        "product": {
+          "name": "NIBE F1155",
+          "serialNumber": "12345678"
+        }
+      }
+    ]
+  }
+]
+```
+
+**Use cases**:
+
+- Understand raw API response structure
+- Debug API integration issues
+- Explore complete system metadata
+- Verify API credentials and access level
+
+### 10. demo_save.py
+
+**Purpose**: Save all API data to a JSON file
+
+**What it does**:
+
+- Retrieves complete data from all systems and devices
+- Saves the entire dataset to a JSON file
+- Useful for offline analysis and debugging
+- Creates a snapshot of current system state
+
+**Usage**:
+
+```bash
+python demo/demo_save.py
+```
+
+**Example output**:
+
+```
+Saving API data to file...
+✓ Data saved to: myuplink_data_2025-10-24_15-30-45.json
+```
+
+**Use cases**:
+
+- Create backups of system data
+- Offline analysis of sensor data
+- Share data for troubleshooting
+- Document system configuration
+- Archive historical snapshots
 
 ## Running Demo Scripts in Different Modes
 

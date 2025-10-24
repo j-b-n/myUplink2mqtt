@@ -119,6 +119,59 @@ def determine_value_type(value):
     return "string"
 
 
+def has_enum_values(parameter_info):
+    """Check if parameter has enumValues defined.
+
+    Args:
+        parameter_info (dict): Parameter information dictionary.
+
+    Returns:
+        bool: True if parameter has enumValues, False otherwise.
+
+    """
+    enum_values = parameter_info.get("enum_values", [])
+    return bool(enum_values) and len(enum_values) > 0
+
+
+def clean_enum_text(text):
+    """Clean enum text by removing newlines and extra whitespace.
+
+    Args:
+        text (str): Enum text to clean.
+
+    Returns:
+        str: Cleaned enum text.
+
+    """
+    if not text:
+        return text
+    # Remove newlines, carriage returns, and normalize whitespace
+    cleaned = text.replace("\r", "").replace("\n", "")
+    # Replace multiple spaces with single space
+    while "  " in cleaned:
+        cleaned = cleaned.replace("  ", " ")
+    return cleaned.strip()
+
+
+def build_enum_options(enum_values):
+    """Build list of enum option values for Home Assistant select entity.
+
+    Args:
+        enum_values (list): List of enum value dictionaries from API.
+
+    Returns:
+        list: List of cleaned enum text values for select options.
+
+    """
+    options = []
+    for enum_item in enum_values:
+        text = enum_item.get("text", "")
+        cleaned_text = clean_enum_text(text)
+        if cleaned_text:
+            options.append(cleaned_text)
+    return options
+
+
 def determine_entity_category(parameter_id, parameter_name):
     """Determine Home Assistant entity category based on parameter.
 
@@ -184,6 +237,40 @@ def clean_parameter_name(parameter_name, device_name):
     return parameter_name
 
 
+def _add_enum_configuration(payload, parameter_info, state_topic):
+    """Add enum-specific configuration to discovery payload.
+
+    Args:
+        payload (dict): Discovery payload to modify.
+        parameter_info (dict): Parameter information with enum_values.
+        state_topic (str): MQTT state topic.
+
+    """
+    enum_values = parameter_info.get("enum_values", [])
+    options = build_enum_options(enum_values)
+    payload["options"] = options
+
+    # Add command topic for select entity (allows Home Assistant to send commands)
+    # Extract system_id from state_topic (format: myuplink/{system_id}/{parameter_id}/value)
+    state_topic_parts = state_topic.split("/")
+    if len(state_topic_parts) >= 2:
+        system_id = state_topic_parts[1]
+        command_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_info['id']}/set"
+        payload["command_topic"] = command_topic
+
+    # Get current value's text representation
+    current_value = parameter_info.get("value")
+    current_text = (
+        str(int(current_value)) if isinstance(current_value, float) else str(current_value)
+    )
+
+    # Find the text for current value
+    for enum_item in enum_values:
+        if enum_item.get("value") == current_text:
+            payload["value_template"] = "{{ value }}"
+            break
+
+
 def build_discovery_payload(device_info, parameter_info, state_topic, availability_topic):
     """Build Home Assistant discovery payload.
 
@@ -191,7 +278,7 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
         device_info (dict): Device information with keys: id, name, manufacturer, model,
                            serial (optional).
         parameter_info (dict): Parameter information with keys: id, name, value, unit,
-                              value_type, category (optional).
+                              value_type, category (optional), enum_values (optional).
         state_topic (str): MQTT state topic.
         availability_topic (str): MQTT availability topic.
 
@@ -231,24 +318,28 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     if device_info.get("serial"):
         discovery_payload["device"]["serial_number"] = device_info["serial"]
 
-    # Add unit for sensor platforms (not binary sensors)
-    value_type = parameter_info.get("value_type", "string")
-    unit = normalize_unit(parameter_info.get("unit", ""))
-    is_binary = value_type == "bool" or (value_type == "int" and not unit)
+    # Check if parameter has enumValues for select entity
+    if has_enum_values(parameter_info):
+        _add_enum_configuration(discovery_payload, parameter_info, state_topic)
+    else:
+        # Add unit for sensor platforms (not binary sensors or enums)
+        value_type = parameter_info.get("value_type", "string")
+        unit = normalize_unit(parameter_info.get("unit", ""))
+        is_binary = value_type == "bool" or (value_type == "int" and not unit)
 
-    if not is_binary and unit:
-        discovery_payload["unit_of_measurement"] = unit
+        if not is_binary and unit:
+            discovery_payload["unit_of_measurement"] = unit
 
-    # Add device class if available
-    if device_class:
-        discovery_payload["device_class"] = device_class
+        # Add device class if available
+        if device_class:
+            discovery_payload["device_class"] = device_class
 
-    # Add state class for numeric sensors
-    if not is_binary and unit:
-        if unit in ["kWh", "Wh"]:
-            discovery_payload["state_class"] = "total_increasing"
-        else:
-            discovery_payload["state_class"] = "measurement"
+        # Add state class for numeric sensors
+        if not is_binary and unit:
+            if unit in ["kWh", "Wh"]:
+                discovery_payload["state_class"] = "total_increasing"
+            else:
+                discovery_payload["state_class"] = "measurement"
 
     # Add entity category if specified
     if parameter_info.get("category"):
@@ -260,12 +351,17 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
 def publish_ha_discovery(mqtt_client, device_info, parameter_info, system_id):
     """Publish Home Assistant MQTT discovery configuration.
 
+    Determines the appropriate Home Assistant component based on parameter type:
+    - "select" for parameters with enumValues (options list)
+    - "binary_sensor" for boolean or single-value integer parameters
+    - "sensor" for numeric and string parameters
+
     Args:
         mqtt_client: MQTT client instance.
         device_info (dict): Device information with keys: id, name, manufacturer, model,
                            serial (optional).
         parameter_info (dict): Parameter information with keys: id, name, value, unit,
-                              value_type.
+                              value_type, enum_values (optional).
         system_id (str): System ID for topic structure.
 
     Returns:
@@ -273,12 +369,15 @@ def publish_ha_discovery(mqtt_client, device_info, parameter_info, system_id):
 
     """
     try:
-        # Determine if this is a binary sensor or regular sensor
-        value_type = parameter_info.get("value_type", "string")
-        unit = parameter_info.get("unit", "")
-        is_binary = value_type == "bool" or (value_type == "int" and not unit)
-
-        component = "binary_sensor" if is_binary else "sensor"
+        # Determine component type
+        # Priority: enum > binary_sensor > sensor
+        if has_enum_values(parameter_info):
+            component = "select"
+        else:
+            value_type = parameter_info.get("value_type", "string")
+            unit = parameter_info.get("unit", "")
+            is_binary = value_type == "bool" or (value_type == "int" and not unit)
+            component = "binary_sensor" if is_binary else "sensor"
 
         # Create unique object ID
         unique_id = f"myuplink_{device_info['id']}_{parameter_info['id']}"

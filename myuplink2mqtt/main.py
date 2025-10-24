@@ -200,21 +200,36 @@ def sanitize_name(name):
     return sanitized.strip("_")
 
 
-def publish_sensor_state(mqtt_client, system_id, parameter_id, value):
+def publish_sensor_state(mqtt_client, system_id, parameter_id, value, enum_values=None):
     """Publish sensor state to MQTT.
+
+    For enum parameters, publishes the text representation of the value.
+    For other parameters, publishes the numeric/string value as-is.
 
     Args:
         mqtt_client: MQTT client instance.
         system_id (str): System ID.
         parameter_id (str): Parameter ID.
-        value: Parameter value.
+        value: Parameter value (numeric or string).
+        enum_values (list, optional): List of enum value dicts with 'value' and 'text' keys.
 
     """
     # State topic
     state_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_id}/value"
 
+    # If this is an enum parameter, convert numeric value to text
+    state_value = value
+    if enum_values and len(enum_values) > 0:
+        # Convert value to string for comparison
+        value_str = str(int(value)) if isinstance(value, float) else str(value)
+        # Find matching enum text
+        for enum_item in enum_values:
+            if enum_item.get("value") == value_str:
+                state_value = enum_item.get("text", value)
+                break
+
     # Publish state
-    mqtt_client.publish(state_topic, str(value), qos=1, retain=True)
+    mqtt_client.publish(state_topic, str(state_value), qos=1, retain=True)
 
 
 def publish_availability(mqtt_client, system_id, available=True):
@@ -289,6 +304,7 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
             "category": determine_entity_category(
                 point["parameterId"], get_parameter_display_name(point)
             ),
+            "enum_values": point.get("enumValues", []),
         }
 
         # Publish to MQTT if not in debug mode
@@ -300,7 +316,11 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
 
             # Publish current state (every cycle)
             publish_sensor_state(
-                mqtt_client, system_id, parameter_info["id"], parameter_info["value"]
+                mqtt_client,
+                system_id,
+                parameter_info["id"],
+                parameter_info["value"],
+                parameter_info.get("enum_values", []),
             )
 
         points_published += 1
