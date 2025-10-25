@@ -1,10 +1,14 @@
 # myUplink2mqtt
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: RUFF](https://img.shields.io/badge/code%20style-RUFF-4B8BBE.svg)](https://github.com/astral-sh/ruff)
+
 A Python utility to bridge myUplink API data to MQTT with Home Assistant auto-discovery support.
 
-## Overview
+## 📋 Overview
 
-This project provides a complete bridge between the myUplink API (for HVAC/heat pump systems) and MQTT brokers, with automatic Home Assistant integration via MQTT discovery.
+This project provides a complete bridge between the **myUplink API** (for HVAC/heat pump systems) and MQTT brokers, with automatic Home Assistant integration via MQTT discovery. It enables seamless integration of heating and cooling systems into Home Assistant and other MQTT-compatible platforms.
 
 **Key components:**
 
@@ -13,50 +17,81 @@ This project provides a complete bridge between the myUplink API (for HVAC/heat 
 - **Demo scripts**: Practical examples of API operations and MQTT integration
 - **Tests**: Comprehensive test suite with pytest
 - **Docker support**: Ready-to-deploy containerized setup
+- **Systemd service**: Production-ready Linux service installation
 
-## Features
+## ✨ Features
 
-- 🔐 OAuth2 authentication with automatic token refresh
-- 🏠 Home Assistant MQTT auto-discovery for seamless integration
-- 🔄 Continuous polling with configurable intervals (default: 2 minutes)
-- 📊 Publishes all device parameters as individual MQTT topics
-- 🎯 Intelligent sensor type detection (temperature, humidity, energy, power, etc.)
-- 🔧 Configuration via environment variables or config files
-- 🐳 Docker and Docker Compose ready
-- 🛠️ Systemd service installation scripts included
-- 🧪 Full test coverage with pytest
+- 🔐 **OAuth2 Authentication**: Secure API access with automatic token refresh
+- 🏠 **Home Assistant Integration**: Automatic MQTT discovery for seamless sensor configuration
+- 🔄 **Continuous Polling**: Configurable polling intervals (default: 2 minutes)
+- 📊 **Complete Data Export**: Publishes all device parameters as individual MQTT topics
+- 🎯 **Smart Sensor Detection**: Intelligent sensor type detection (temperature, humidity, energy, power, etc.)
+- 🔧 **Flexible Configuration**: Environment variables or config files
+- 🐳 **Container Ready**: Docker and Docker Compose support included
+- 🛠️ **Easy Deployment**: Systemd service installation scripts
+- 🧪 **Well Tested**: Full test coverage with pytest
+- ⚡ **High Quality**: Code quality enforced with RUFF linter
 
-## Documentation
+## 🛠️ Technology Stack
 
-Available documentation in the [docs/](docs/) folder:
+### Core Technologies
 
-- **[Demo Scripts Guide](docs/DEMO_GUIDE.md)** - Learn by example with demo scripts
+- **Language**: Python 3.8+
+- **Package Manager**: pip with modern `pyproject.toml` configuration
+- **API Client**: `myuplink` library for HVAC API access
+- **MQTT Client**: `paho-mqtt` for broker communication
+- **OAuth**: `requests_oauthlib` for OAuth2 authentication
+- **Async Operations**: `aiohttp` for async HTTP requests
+
+### Development Tools
+
+- **Linting & Formatting**: RUFF (100-1000x faster than traditional tools)
+- **Testing**: pytest with coverage support
+- **Build System**: Modern Python packaging with `pyproject.toml`
+- **Task Automation**: Makefile for common operations
+
+### Deployment Options
+
+- **Local**: Direct Python installation
+- **Docker**: Containerized deployment with official image
+- **Systemd**: Production Linux service
+- **Scheduled Tasks**: Cron job compatible
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the [docs/](docs/) folder:
+
+- **[Demo Scripts Guide](docs/DEMO_GUIDE.md)** - Learn by example with practical demo scripts
 - **[Docker Quick Start](docs/DOCKER_QUICK_START.md)** - Get running with Docker in minutes
-- **[Docker Compose Guide](docs/DOCKER_COMPOSE_GUIDE.md)** - Full stack with MQTT broker
-- **[Docker Quick Reference](docs/DOCKER_QUICK_REFERENCE.md)** - Docker commands and tips
+- **[Docker Compose Guide](docs/DOCKER_COMPOSE_GUIDE.md)** - Complete stack with MQTT broker included
+- **[Docker Quick Reference](docs/DOCKER_QUICK_REFERENCE.md)** - Docker commands and troubleshooting tips
 
-## Prerequisites
+For more details on available documentation, see the [docs/index.md](docs/index.md) file.
 
-## Prerequisites
+## 📋 Prerequisites
+
+Before you begin, ensure you have:
 
 ### 1. myUplink API Credentials
 
 - **Client ID** and **Client Secret** from [myUplink API Portal](https://dev.myuplink.com/)
-- **OAuth token** (obtained through initial authentication flow - see below)
+- OAuth token (obtained through initial authentication flow - obtained automatically on first run)
 
 ### 2. MQTT Broker
 
-- Running MQTT broker (e.g., Mosquitto)
+- Running MQTT broker (e.g., Mosquitto, AWS IoT Core, etc.)
 - Optional: MQTT authentication credentials
 
 ### 3. Python Environment
 
 - **Python 3.8+** with pip
-- Virtual environment recommended
+- Virtual environment recommended (e.g., venv or conda)
 
-## Installation
+## 🚀 Getting Started
 
-### Method 1: Standard Python Installation (Recommended)
+### Installation Methods
+
+#### Method 1: Standard Python Installation (Recommended)
 
 ```bash
 # Clone repository
@@ -74,21 +109,23 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-### Method 2: Using Makefile
+#### Method 2: Using Makefile (Quickest)
 
 ```bash
+cd myUplink2mqtt
+
 # Install runtime dependencies only
 make install
 
-# Install with development tools (RUFF, pytest, coverage)
+# Or install with development tools
 make install-dev
 ```
 
-### Method 3: Docker
+#### Method 3: Docker
 
 See [Docker Quick Start](docs/DOCKER_QUICK_START.md) for containerized deployment.
 
-### Method 4: Direct Dependencies
+#### Method 4: Direct Requirements Installation
 
 ```bash
 # Install only runtime dependencies
@@ -98,13 +135,13 @@ pip install -r requirements.txt
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 ### Step 1: OAuth Credentials
 
 Store your myUplink API credentials using one of these methods:
 
-**Option 1: Config File** (Recommended)
+**Option A: Config File** (Recommended)
 
 Create `~/.myUplink_API_Config.json`:
 
@@ -115,7 +152,7 @@ Create `~/.myUplink_API_Config.json`:
 }
 ```
 
-**Option 2: Environment Variables**
+**Option B: Environment Variables**
 
 ```bash
 export MYUPLINK_CLIENT_ID="your_client_id"
@@ -124,11 +161,11 @@ export MYUPLINK_CLIENT_SECRET="your_client_secret"
 
 ### Step 2: OAuth Token
 
-The OAuth token is stored at `~/.myUplink_API_Token.json` and is automatically refreshed. You must obtain an initial token through the OAuth authorization flow. The token file will be automatically updated when tokens are refreshed during API operations.
+The OAuth token is stored at `~/.myUplink_API_Token.json` and is automatically refreshed during API operations. The token file will be automatically created and updated when needed.
 
 ### Step 3: MQTT Configuration
 
-Configure MQTT connection via environment variables:
+Configure MQTT connection via environment variables (optional - defaults are provided):
 
 ```bash
 # MQTT Broker (default: 10.0.0.2:1883)
@@ -143,11 +180,49 @@ export MQTT_PASSWORD="your_password"
 export MQTT_BASE_TOPIC="myuplink"              # Default: myuplink
 export HA_DISCOVERY_PREFIX="homeassistant"     # Default: homeassistant
 
-# Poll Interval (seconds)
+# Poll Interval (seconds, default: 120)
 export POLL_INTERVAL="120"                     # Default: 120 (2 minutes)
 ```
 
-## Usage
+## 🏗️ Project Architecture
+
+### High-Level Overview
+
+The bridge operates as a polling service that:
+
+1. **Authenticates** with myUplink API using OAuth2
+2. **Retrieves** system and device information periodically
+3. **Transforms** device data into MQTT messages
+4. **Publishes** to MQTT broker with Home Assistant discovery metadata
+5. **Maintains** continuous operation with automatic token refresh
+
+### Core Components
+
+```
+myUplink API (HVAC Systems)
+        ↓
+    OAuth2 Auth
+        ↓
+myuplink_utils.py (API Operations)
+        ↓
+Device Data Processing
+        ↓
+auto_discovery_utils.py (HA Metadata)
+        ↓
+MQTT Broker
+        ↓
+Home Assistant + MQTT Integrations
+```
+
+### Key Design Patterns
+
+- **Modular Architecture**: Reusable utility modules (`myuplink_utils.py`, `auto_discovery_utils.py`)
+- **Error Handling**: Functions return `None` on failure with descriptive error messages
+- **Configuration Priority**: File-based config overridden by environment variables
+- **Async Operations**: Efficient async HTTP requests for API calls
+- **Retained Messages**: MQTT discovery payloads retained at broker for persistence
+
+## 📖 Usage
 
 ### Running the Bridge
 
@@ -317,9 +392,52 @@ The application uses Python's standard `logging` module with appropriate severit
 2025-10-22 19:40:48 - INFO - First cycle: Sending Home Assistant discovery messages (retained at broker)
 ```
 
-## Demo Scripts
+## 💡 Key Features
 
-The `demo/` folder contains practical examples showing how to use the myUplink API and MQTT integration. These are useful for learning and testing:
+### OAuth2 & Authentication
+
+- Automatic token refresh during API operations
+- Secure credential storage in home directory
+- Support for both file-based and environment variable configuration
+- Graceful error handling with prerequisite checking
+
+### Home Assistant Integration
+
+- Automatic MQTT discovery - no manual configuration needed
+- Device grouping and organization in HA
+- Proper device classes (temperature, humidity, energy, power, etc.)
+- Correct units of measurement (°C, %, kWh, W, rpm, etc.)
+- Intelligent entity categorization (diagnostic, config)
+- Manufacturer and model information included
+- Discovery messages retained at broker for broker restarts
+
+### MQTT Publishing
+
+- Individual MQTT topics for each device parameter
+- Configurable base topic prefix
+- Automatic topic structure: `{base_topic}/{system_id}_{device_id}/{parameter_id}/value`
+- Continuous state updates at configured polling intervals
+- Retained messages for persistence
+
+### Deployment Flexibility
+
+- **Local**: Direct Python installation with venv
+- **Docker**: Containerized deployment with volume mounts
+- **Docker Compose**: Complete stack with MQTT broker included
+- **Systemd**: Production-grade Linux service
+- **Scheduled Tasks**: Compatible with cron jobs
+
+### Development & Testing
+
+- Full pytest test suite with coverage reports
+- RUFF code quality enforcement
+- Demo scripts for learning and testing
+- Configuration validation utilities
+- Comprehensive logging with multiple levels
+
+## 📚 Demo Scripts
+
+The `demo/` folder contains practical examples for learning and testing:
 
 ```bash
 # Test API connectivity and OAuth authentication
@@ -346,7 +464,7 @@ python demo/demo_mqtt_list_topics.py
 
 See [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for detailed information about each demo script.
 
-## Testing
+## 🧪 Testing
 
 ### Running Tests
 
@@ -374,13 +492,23 @@ pytest tests/test_utilities.py::test_check_oauth_prerequisites -v
 
 **Note**: The Makefile automatically detects and uses the virtual environment if it exists.
 
-### Available Tests
+### Available Test Suites
 
 - `tests/test_utilities.py` - Tests for myUplink API utility functions
-- `tests/test_auto_discovery.py` - Tests for Home Assistant auto-discovery
-- `tests/test_mqtt.py` - Tests for MQTT connectivity
+- `tests/test_auto_discovery.py` - Tests for Home Assistant auto-discovery messaging
+- `tests/test_mqtt.py` - Tests for MQTT connectivity and operations
 
-## Home Assistant Integration
+### Test Coverage
+
+Run tests with coverage reports:
+
+```bash
+make test-cov
+```
+
+This generates a detailed coverage report showing which parts of the codebase are covered by tests.
+
+## 🏠 Home Assistant Integration
 
 Sensors are automatically discovered in Home Assistant through MQTT discovery. Each device parameter appears as a separate sensor entity with appropriate metadata.
 
@@ -510,31 +638,29 @@ For detailed Docker instructions, see:
 - [Docker Compose Guide](docs/DOCKER_COMPOSE_GUIDE.md)
 - [Docker Quick Reference](docs/DOCKER_QUICK_REFERENCE.md)
 
-## Development
+## 💻 Development
 
-### Virtual Environment
+### Code Quality Standards
 
-The Makefile automatically detects and uses the virtual environment if it exists:
+This project enforces strict coding standards using RUFF:
 
-```bash
-# Create virtual environment (one-time setup)
-python -m venv .venv
+#### Quality Requirements
 
-# Now all make commands automatically use the venv:
-make lint
-make format
-make test
-```
+- **Language**: Python 3.8+ compatible
+- **Linter**: RUFF with comprehensive rule set (E, W, F, B, C4, I, RUF, UP, N, BLE, A, C90, D)
+- **Formatter**: RUFF for consistent code style
+- **Line Length**: 100 characters maximum
+- **Imports**: Sorted and organized (standard library → third-party → local)
+- **Docstrings**: PEP 257 compliant with comprehensive documentation
+- **Error Handling**: All functions return `None` on failure with descriptive messages
 
-### Code Quality with RUFF
-
-This project uses **RUFF** for linting and formatting (100-1000x faster than traditional tools):
+#### Code Quality Workflow
 
 ```bash
-# Check code quality (automatically uses venv if available)
+# Check code quality
 make lint              # Run RUFF linter
 
-# Format code (automatically uses venv if available)
+# Format code
 make format            # Auto-fix formatting and auto-fixable issues
 
 # Check formatting without changes
@@ -542,39 +668,41 @@ make format-check
 
 # Run all checks (lint + tests)
 make check
+
+# Manual RUFF commands
+ruff check .           # Check all files
+ruff check . --fix     # Fix auto-fixable issues
+ruff format .          # Format code
 ```
 
-### Manual RUFF Commands
+### Development Environment Setup
 
 ```bash
-# Activate venv first
-source .venv/bin/activate
+# Create virtual environment (one-time setup)
+python -m venv .venv
 
-# Check all files
-ruff check .
+# Activate it
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Fix auto-fixable issues
-ruff check . --fix
+# Install with development tools
+make install-dev
 
-# Format code
-ruff format .
-
-# Check specific files
-ruff check myuplink2mqtt/
+# Now all make commands automatically use the venv
+make lint
+make format
+make test
 ```
 
-### Configuration
+### Project Configuration
 
-Project configuration is centralized in `pyproject.toml`:
+All project configuration is centralized in `pyproject.toml`:
 
 - Project metadata (name, version, description, dependencies)
 - RUFF linter and formatter settings
-- Pytest configuration
-- Coverage configuration
+- Pytest configuration and coverage settings
+- Package build configuration
 
-All Python files must pass RUFF checks before committing.
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 myUplink2mqtt/
@@ -595,7 +723,7 @@ myUplink2mqtt/
 │       ├── myuplink_utils.py      # myUplink API operations
 │       └── auto_discovery_utils.py # Home Assistant auto-discovery
 │
-├── demo/                          # Demo scripts
+├── demo/                          # Demo scripts for learning
 │   ├── demo_ping.py               # API connectivity test
 │   ├── demo_get_names.py          # Get system/device names
 │   ├── demo_get_overview.py       # Device overview data
@@ -604,7 +732,7 @@ myUplink2mqtt/
 │   ├── demo_mqtt.py               # MQTT connectivity test
 │   └── demo_mqtt_list_topics.py   # List MQTT topics
 │
-├── tests/                         # Test suite
+├── tests/                         # Test suite (pytest)
 │   ├── __init__.py
 │   ├── conftest.py                # Pytest configuration
 │   ├── pytest.ini                 # Pytest settings
@@ -613,7 +741,7 @@ myUplink2mqtt/
 │   ├── test_mqtt.py               # MQTT connectivity tests
 │   └── README.md                  # Testing documentation
 │
-├── scripts/                       # Installation scripts
+├── scripts/                       # Installation and setup scripts
 │   ├── install_service.sh         # Install systemd service
 │   ├── uninstall_service.sh       # Remove systemd service
 │   ├── myuplink2mqtt.service      # Systemd service file
@@ -629,15 +757,30 @@ myUplink2mqtt/
 │   └── mosquitto/
 │       └── mosquitto.conf         # Mosquitto MQTT broker config
 │
-├── docs/                          # Documentation
+├── docs/                          # Documentation (all .md files)
 │   ├── DEMO_GUIDE.md              # Demo scripts guide
 │   ├── DOCKER_QUICK_START.md      # Docker quick start
 │   ├── DOCKER_COMPOSE_GUIDE.md    # Docker Compose guide
 │   └── DOCKER_QUICK_REFERENCE.md  # Docker commands reference
 │
-└── .github/
-    └── copilot-instructions.md    # AI coding agent guidelines
+├── htmlcov/                       # Code coverage reports (generated)
+│   └── index.html                 # Coverage report
+│
+└── .github/                       # GitHub and CI/CD
+    ├── copilot-instructions.md    # AI coding agent guidelines
+    ├── instructions/              # VS Code instructions
+    │   └── python.instructions.md # Python coding conventions
+    └── prompts/                   # AI assistant prompts
+        └── readme-blueprint-generator.prompt.md
 ```
+
+### Key Directories
+
+- **`myuplink2mqtt/`**: Main application package
+- **`demo/`**: Practical examples for learning and testing
+- **`tests/`**: Comprehensive test suite
+- **`docs/`**: All documentation (keep all `.md` files here)
+- **`scripts/`**: Installation and deployment automation
 
 ## Troubleshooting
 
@@ -707,54 +850,97 @@ python demo/demo_mqtt.py
 python demo/demo_get_overview.py
 ```
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! When contributing:
+Contributions are welcome! When contributing, please follow these guidelines:
+
+### Code Contributions
 
 1. Follow existing code patterns and conventions
 2. Use `make format` to format your code with RUFF
 3. Ensure all files pass `make lint` checks
 4. Run `make test` and ensure all tests pass
 5. Add tests for new functionality
-6. Update documentation accordingly (remember: all `.md` files go in `docs/` directory)
+6. Update documentation in `docs/` directory
 7. Follow the project structure and naming conventions
 
 ### Development Workflow
 
 ```bash
-# Setup development environment
+# 1. Setup development environment
 python -m venv .venv
 source .venv/bin/activate
 make install-dev
 
-# Make your changes
-# ...
+# 2. Make your changes
+# ... edit files ...
 
-# Format and check code
+# 3. Format and check code
 make format
 make lint
 
-# Run tests
+# 4. Run tests
 make test
 
-# Run all checks
+# 5. Run all checks together
 make check
+
+# 6. Commit and push
+git add .
+git commit -m "Descriptive commit message"
+git push
 ```
 
-## License
+### Code Style Requirements
 
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0-only).
+- All Python files must pass RUFF linting
+- Use double quotes for strings
+- Maximum line length: 100 characters
+- Comprehensive docstrings following PEP 257
+- Clear variable and function names
+- Proper error handling
 
-See [LICENSE](LICENSE) file for full details.
+### Documentation Updates
 
-## Acknowledgments
+- All new `.md` files must be placed in `docs/` directory
+- Keep `docs/index.md` updated as the central documentation index
+- Cross-reference related documentation
+- Include code examples where appropriate
+- Update README.md only for major changes
 
-- myUplink API for providing access to HVAC system data
-- Home Assistant for the excellent MQTT discovery protocol
-- The open-source community for tools like RUFF, pytest, and paho-mqtt
+### Testing Requirements
 
-## Support
+- Add tests for new functionality
+- Ensure test coverage doesn't decrease
+- Run `make test-cov` to verify coverage
+- All tests must pass before submitting PR
 
-- **Issues**: [GitHub Issues](https://github.com/j-b-n/myUplink2mqtt/issues)
-- **Documentation**: See [docs/](docs/) folder
-- **Demo Scripts**: See [demo/](demo/) folder for examples
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0-only).
+
+See [LICENSE](LICENSE) file for full license details.
+
+## 🆘 Support & Resources
+
+### Getting Help
+
+- **Issues**: [GitHub Issues](https://github.com/j-b-n/myUplink2mqtt/issues) - Report bugs and request features
+- **Documentation**: See [docs/](docs/) folder for comprehensive guides
+- **Demo Scripts**: See [demo/](demo/) folder for practical examples
+- **Discussion**: Check existing issues and discussions for solutions
+
+### Useful Links
+
+- **myUplink API**: [dev.myuplink.com](https://dev.myuplink.com/)
+- **Home Assistant**: [home-assistant.io](https://www.home-assistant.io/)
+- **Home Assistant MQTT**: [Home Assistant MQTT Integration](https://www.home-assistant.io/integrations/mqtt/)
+- **Mosquitto MQTT**: [mosquitto.org](https://mosquitto.org/)
+
+## 🙏 Acknowledgments
+
+- **myUplink API** - For providing access to HVAC system data
+- **Home Assistant** - For excellent MQTT discovery protocol
+- **RUFF** - For fast, comprehensive code quality tools
+- **pytest** - For reliable testing framework
+- Open-source community - For inspiration and tools
