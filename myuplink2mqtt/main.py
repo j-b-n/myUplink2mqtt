@@ -36,7 +36,7 @@ from myuplink2mqtt.utils.myuplink_utils import (
 logger = logging.getLogger(__name__)
 
 # MQTT Configuration
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "10.0.0.2")
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "127.0.0.1")
 MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
@@ -56,6 +56,9 @@ SILENT_MODE = False
 DEBUG_MODE = False
 PUBLISH_TO_MQTT = True
 RUN_ONCE = False
+DISCOVERY_PREFIX = ""
+MQTT_HOST = ""
+SEND_ALL_PARAMETERS = False
 
 
 def setup_logging(debug_mode=False, silent_mode=False):
@@ -138,6 +141,24 @@ def parse_arguments():
         help="Set poll interval in seconds (default: 300)",
     )
 
+    parser.add_argument(
+        "--host",
+        metavar="HOST",
+        help="Set MQTT broker host (default: 127.0.0.1)",
+    )
+
+    parser.add_argument(
+        "--discovery-prefix",
+        metavar="PREFIX",
+        help="Set Home Assistant discovery prefix (default: homeassistant, e.g., 'domoticz')",
+    )
+
+    parser.add_argument(
+        "--send-all",
+        action="store_true",
+        help="Send all parameters as-is without filtering (default: filter unused/invalid parameters)",
+    )
+
     return parser.parse_args()
 
 
@@ -198,6 +219,84 @@ def sanitize_name(name):
     while "__" in sanitized:
         sanitized = sanitized.replace("__", "_")
     return sanitized.strip("_")
+
+
+def should_send_parameter(parameter_info):
+    """Check if a parameter should be sent to MQTT.
+
+    By default, filters out parameters with "Not used" value (case-insensitive).
+    Can be disabled with --send-all flag.
+
+    Args:
+        parameter_info (dict): Parameter information with keys: value, strVal, etc.
+
+    Returns:
+        bool: True if parameter should be sent, False otherwise.
+
+    """
+    # If SEND_ALL_PARAMETERS is enabled, send everything
+    if SEND_ALL_PARAMETERS:
+        return True
+
+    # Filter out "Not used" values (case-insensitive)
+    # Check both value (direct string values) and strVal (for enum parameters)
+    value = parameter_info.get("value")
+    if isinstance(value, str) and value.lower() == "not used":
+        return False
+
+    str_val = parameter_info.get("strVal")
+    if isinstance(str_val, str) and str_val.lower() == "not used":
+        return False
+
+    return True
+
+
+def extract_installation_date_values(points_data):
+    """Extract installation year, month, day from point data.
+
+    Looks for both simple (Year/Month/Day) and text-not-found parameter versions.
+
+    Args:
+        points_data (list): List of parameter points.
+
+    Returns:
+        tuple: (year, month, day, year_point, month_point, day_point) or (None, None, None, None, None, None).
+
+    """
+    year = None
+    month = None
+    day = None
+    year_point = None
+    month_point = None
+    day_point = None
+
+    for point in points_data:
+        param_id = point.get("parameterId")
+        # Try simple IDs first (8556, 8557, 8558)
+        if param_id == "8556":  # Year
+            year = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            year_point = point
+        elif param_id == "8557":  # Month
+            month = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            month_point = point
+        elif param_id == "8558":  # Day
+            day = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            day_point = point
+        # Also check text-not-found versions (60305, 60306, 60307) which map to same concepts
+        elif param_id == "60305":  # Installation year (text not found)
+            if year is None:  # Only use if we haven't found the simple version
+                year = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            year_point = point
+        elif param_id == "60306":  # Installation month (text not found)
+            if month is None:  # Only use if we haven't found the simple version
+                month = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            month_point = point
+        elif param_id == "60307":  # Installation day (text not found)
+            if day is None:  # Only use if we haven't found the simple version
+                day = int(point["value"]) if isinstance(point["value"], (int, float)) else None
+            day_point = point
+
+    return year, month, day, year_point, month_point, day_point
 
 
 def publish_sensor_state(mqtt_client, system_id, parameter_id, value, enum_values=None):
@@ -287,14 +386,73 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
         return False
     logger.debug(f"Retrieved {len(points_data)} data points")
 
+    # Extract installation date components
+    year, month, day, year_point, month_point, day_point = extract_installation_date_values(
+        points_data
+    )
+
     # Publish availability as online
     if PUBLISH_TO_MQTT and mqtt_client is not None:
         publish_availability(mqtt_client, system_id, available=True)
 
-    # Process each data point
+    # Process installation date as a virtual parameter if all three components are available
     points_published = 0
     discovery_sent = 0
+
+    if year is not None and month is not None and day is not None:
+        # Create installation date parameter
+        installation_date_value = f"{year:04d}-{month:02d}-{day:02d}"
+        parameter_info = {
+            "id": "installation_date",
+            "name": "Installation date",
+            "value": installation_date_value,
+            "unit": "",
+            "value_type": "string",
+            "category": "diagnostic",
+            "enum_values": [],
+        }
+
+        # Check if parameter should be sent
+        if should_send_parameter(parameter_info):
+            # Publish to MQTT if not in debug mode
+            if PUBLISH_TO_MQTT and mqtt_client is not None:
+                # Publish Home Assistant discovery configuration (only on first cycle)
+                if send_discovery:
+                    publish_ha_discovery(
+                        mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
+                    )
+                    discovery_sent += 1
+
+                # Publish current state (every cycle)
+                publish_sensor_state(
+                    mqtt_client,
+                    system_id,
+                    parameter_info["id"],
+                    parameter_info["value"],
+                    parameter_info.get("enum_values", []),
+                )
+
+            points_published += 1
+            logger.debug(
+                f"Published virtual parameter: {parameter_info['name']} = {installation_date_value}"
+            )
+
+    # Process each data point
     for point in points_data:
+        # Skip individual installation date parameters (they are combined into a virtual parameter)
+        # Skip both simple versions (8556, 8557, 8558) and text-not-found versions (60305, 60306, 60307)
+        param_id = point.get("parameterId")
+        if param_id in (
+            "8556",
+            "8557",
+            "8558",
+            "60305",
+            "60306",
+            "60307",
+        ):  # All installation date variants
+            logger.debug(f"Skipping installation date component: {param_id}")
+            continue
+
         parameter_info = {
             "id": point["parameterId"],
             "name": get_parameter_display_name(point),
@@ -305,13 +463,23 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
                 point["parameterId"], get_parameter_display_name(point)
             ),
             "enum_values": point.get("enumValues", []),
+            "strVal": point.get("strVal"),  # Include strVal for filtering
         }
+
+        # Check if parameter should be sent
+        if not should_send_parameter(parameter_info):
+            logger.debug(
+                f"Skipping parameter {parameter_info['id']}: {parameter_info['name']} (filtered)"
+            )
+            continue
 
         # Publish to MQTT if not in debug mode
         if PUBLISH_TO_MQTT and mqtt_client is not None:
             # Publish Home Assistant discovery configuration (only on first cycle)
             if send_discovery:
-                publish_ha_discovery(mqtt_client, device_info, parameter_info, system_id)
+                publish_ha_discovery(
+                    mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
+                )
                 discovery_sent += 1
 
             # Publish current state (every cycle)
@@ -544,7 +712,7 @@ async def main_loop():
 
 def main():
     """Entry point for the script."""
-    global SILENT_MODE, DEBUG_MODE, PUBLISH_TO_MQTT, POLL_INTERVAL, RUN_ONCE  # pylint: disable=global-statement
+    global SILENT_MODE, DEBUG_MODE, PUBLISH_TO_MQTT, POLL_INTERVAL, RUN_ONCE, DISCOVERY_PREFIX, HA_DISCOVERY_PREFIX, MQTT_BROKER_HOST, MQTT_HOST, SEND_ALL_PARAMETERS  # pylint: disable=global-statement
 
     # Parse command line arguments
     args = parse_arguments()
@@ -554,10 +722,21 @@ def main():
     DEBUG_MODE = args.debug
     PUBLISH_TO_MQTT = not args.debug
     RUN_ONCE = args.once
+    SEND_ALL_PARAMETERS = args.send_all
 
     # Override poll interval if specified
     if args.poll:
         POLL_INTERVAL = args.poll
+
+    # Override MQTT host if specified
+    if args.host:
+        MQTT_BROKER_HOST = args.host
+        MQTT_HOST = args.host
+
+    # Override discovery prefix if specified
+    if args.discovery_prefix:
+        HA_DISCOVERY_PREFIX = args.discovery_prefix
+        DISCOVERY_PREFIX = args.discovery_prefix
 
     # Setup logging with appropriate level
     setup_logging(debug_mode=DEBUG_MODE, silent_mode=SILENT_MODE)

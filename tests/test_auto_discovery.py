@@ -34,6 +34,14 @@ class TestNormalizeUnit:
         """Test normalization of relative humidity units."""
         assert normalize_unit("rh%") == "%"
 
+    def test_normalize_water_flow_liter_per_minute(self):
+        """Test normalization of water flow l/m to l/hr."""
+        assert normalize_unit("l/m") == "l/hr"
+
+    def test_normalize_water_flow_liter_per_hour(self):
+        """Test normalization of water flow l/hr stays as l/hr."""
+        assert normalize_unit("l/hr") == "l/hr"
+
     def test_normalize_standard_unit(self):
         """Test that standard units are returned unchanged."""
         assert normalize_unit("°C") == "°C"
@@ -122,6 +130,26 @@ class TestDetermineDeviceClass:
         """Test humidity device class from unit."""
         device_class = determine_device_class("rh%", "12345")
         assert device_class == "humidity"
+
+    def test_device_class_water_flow_rate_l_m(self):
+        """Test water flow rate device class from l/m unit."""
+        device_class = determine_device_class("l/m", "12345")
+        assert device_class == "volume_flow_rate"
+
+    def test_device_class_water_flow_rate_l_hr(self):
+        """Test water flow rate device class from l/hr unit."""
+        device_class = determine_device_class("l/hr", "12345")
+        assert device_class == "volume_flow_rate"
+
+    def test_device_class_water_flow_rate_l_min(self):
+        """Test water flow rate device class from l/min unit."""
+        device_class = determine_device_class("l/min", "12345")
+        assert device_class == "volume_flow_rate"
+
+    def test_device_class_water_flow_rate_m3_h(self):
+        """Test water flow rate device class from m³/h unit."""
+        device_class = determine_device_class("m³/h", "12345")
+        assert device_class == "volume_flow_rate"
 
 
 class TestDetermineValueType:
@@ -300,6 +328,40 @@ class TestBuildDiscoveryPayload:
         )
 
         assert payload["state_class"] == "total_increasing"
+
+    def test_payload_device_class_for_water_flow(self):
+        """Test payload includes device class for water flow (l/hr)."""
+        device_info = self.get_sample_device_info()
+        parameter_info = self.get_sample_parameter_info()
+        parameter_info["unit"] = "l/hr"
+        state_topic = "myuplink/sys1/40004/value"
+        availability_topic = "myuplink/sys1/available"
+
+        payload = build_discovery_payload(
+            device_info, parameter_info, state_topic, availability_topic
+        )
+
+        assert payload["device_class"] == "volume_flow_rate"
+        assert payload["unit_of_measurement"] == "l/hr"
+        assert payload["state_class"] == "measurement"
+
+    def test_payload_device_class_for_water_flow_conversion(self):
+        """Test payload converts l/m to l/hr with value template."""
+        device_info = self.get_sample_device_info()
+        parameter_info = self.get_sample_parameter_info()
+        parameter_info["unit"] = "l/m"
+        state_topic = "myuplink/sys1/40004/value"
+        availability_topic = "myuplink/sys1/available"
+
+        payload = build_discovery_payload(
+            device_info, parameter_info, state_topic, availability_topic
+        )
+
+        assert payload["device_class"] == "volume_flow_rate"
+        assert payload["unit_of_measurement"] == "l/hr"
+        assert payload["state_class"] == "measurement"
+        assert "value_template" in payload
+        assert "* 60" in payload["value_template"]
 
     def test_payload_binary_sensor_detection(self):
         """Test that bool values create binary sensor payloads."""

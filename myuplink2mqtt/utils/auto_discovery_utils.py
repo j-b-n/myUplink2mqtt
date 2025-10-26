@@ -31,6 +31,8 @@ def normalize_unit(unit):
     # Map non-standard units to standard representations
     unit_normalization_map = {
         "rh%": "%",  # Relative humidity: rh% -> %
+        "l/m": "l/hr",  # Liters per minute: l/m -> l/hr (60x conversion)
+        "l/hr": "l/hr",  # Liters per hour: already in desired format
     }
     return unit_normalization_map.get(unit, unit)
 
@@ -59,6 +61,7 @@ def get_unit_to_device_class_mapping():
         "hPa": "pressure",
         "l/m": "volume_flow_rate",
         "l/min": "volume_flow_rate",
+        "l/hr": "volume_flow_rate",
         "m³/h": "volume_flow_rate",
     }
 
@@ -73,6 +76,7 @@ def get_parameter_id_to_device_class_mapping():
     return {
         "43161": "binary_sensor",  # Electricity add (alarm)
         "60433": "humidity",  # Relative humidity
+        "installation_date": "date",  # Installation date (virtual parameter)
     }
 
 
@@ -324,7 +328,8 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     else:
         # Add unit for sensor platforms (not binary sensors or enums)
         value_type = parameter_info.get("value_type", "string")
-        unit = normalize_unit(parameter_info.get("unit", ""))
+        original_unit = parameter_info.get("unit", "")
+        unit = normalize_unit(original_unit)
         is_binary = value_type == "bool" or (value_type == "int" and not unit)
 
         if not is_binary and unit:
@@ -333,6 +338,11 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
         # Add device class if available
         if device_class:
             discovery_payload["device_class"] = device_class
+
+        # Add value template for unit conversions
+#        if original_unit == "l/m" and unit == "l/hr":
+#            # Convert liters per minute to liters per hour (multiply by 60)
+#            discovery_payload["value_template"] = "{{ (value | float(0) * 60) | round(2) }}"
 
         # Add state class for numeric sensors
         if not is_binary and unit:
@@ -348,7 +358,9 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     return discovery_payload
 
 
-def publish_ha_discovery(mqtt_client, device_info, parameter_info, system_id):
+def publish_ha_discovery(
+    mqtt_client, device_info, parameter_info, system_id, discovery_prefix=None
+):
     """Publish Home Assistant MQTT discovery configuration.
 
     Determines the appropriate Home Assistant component based on parameter type:
@@ -363,27 +375,38 @@ def publish_ha_discovery(mqtt_client, device_info, parameter_info, system_id):
         parameter_info (dict): Parameter information with keys: id, name, value, unit,
                               value_type, enum_values (optional).
         system_id (str): System ID for topic structure.
+        discovery_prefix (str, optional): Home Assistant discovery prefix (default: from env).
 
     Returns:
         bool: True if published successfully, False otherwise.
 
     """
     try:
+        # Use provided discovery prefix or fall back to environment variable
+        prefix = discovery_prefix if discovery_prefix else HA_DISCOVERY_PREFIX
+
         # Determine component type
-        # Priority: enum > binary_sensor > sensor
+        # Priority: enum > binary_sensor > text (for string values) > sensor
         if has_enum_values(parameter_info):
             component = "select"
         else:
             value_type = parameter_info.get("value_type", "string")
             unit = parameter_info.get("unit", "")
             is_binary = value_type == "bool" or (value_type == "int" and not unit)
-            component = "binary_sensor" if is_binary else "sensor"
+
+            # Use "text" component for string values with no unit (like dates)
+            if value_type == "string" and not unit:
+                component = "text"
+            elif is_binary:
+                component = "binary_sensor"
+            else:
+                component = "sensor"
 
         # Create unique object ID
         unique_id = f"myuplink_{device_info['id']}_{parameter_info['id']}"
 
         # Discovery topic
-        discovery_topic = f"{HA_DISCOVERY_PREFIX}/{component}/{unique_id}/config"
+        discovery_topic = f"{prefix}/{component}/{unique_id}/config"
 
         # State topic
         state_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_info['id']}/value"
