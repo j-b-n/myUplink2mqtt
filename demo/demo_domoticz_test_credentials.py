@@ -9,7 +9,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -45,9 +44,7 @@ def test_credentials(host, port, username, password):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Test Domoticz Credentials"
-    )
+    parser = argparse.ArgumentParser(description="Test Domoticz Credentials")
 
     parser.add_argument(
         "--domoticz-host",
@@ -95,7 +92,7 @@ def main():
     success_found = False
 
     for username, password in credential_sets:
-        success, status, message = test_credentials(
+        success, _status, message = test_credentials(
             args.domoticz_host,
             args.domoticz_port,
             username,
@@ -127,7 +124,7 @@ def main():
         print("      --domoticz-password PASSWORD")
         print()
     else:
-        print("  ℹ None of the common credentials worked.")
+        print("  i None of the common credentials worked.")
         print()
         print("  You may need to:")
         print("  1. Check Domoticz Web UI (http://10.0.0.100:8080/) for actual credentials")

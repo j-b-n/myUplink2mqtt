@@ -9,7 +9,6 @@ Purpose: Identify discrepancies in flow rate calculations.
 """
 
 import csv
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +28,7 @@ def read_uplink_csv(csv_file):
     uplink_data = []
 
     try:
-        with open(csv_file, "r") as f:
+        with open(csv_file) as f:
             reader = csv.reader(f, delimiter=";")
             header = next(reader)
             print(f"Header: {header}")
@@ -43,11 +42,13 @@ def read_uplink_csv(csv_file):
                         print(f"  ⚠️  Row {i}: Could not parse flow value: {row[1]}")
                         continue
 
-                    uplink_data.append({
-                        "timestamp": timestamp_str,
-                        "flow": flow_value,
-                        "source": "myUplink",
-                    })
+                    uplink_data.append(
+                        {
+                            "timestamp": timestamp_str,
+                            "flow": flow_value,
+                            "source": "myUplink",
+                        }
+                    )
 
         print(f"\n✓ Successfully read {len(uplink_data)} data points from myUplink CSV")
         return uplink_data
@@ -85,11 +86,13 @@ def get_domoticz_data(device_id=9185):
         for point in data_points:
             try:
                 flow_value = float(point.get("v", 0))
-                domoticz_data.append({
-                    "datetime": point.get("d"),
-                    "flow": flow_value,
-                    "source": "Domoticz",
-                })
+                domoticz_data.append(
+                    {
+                        "datetime": point.get("d"),
+                        "flow": flow_value,
+                        "source": "Domoticz",
+                    }
+                )
             except (ValueError, TypeError):
                 pass
 
@@ -120,45 +123,37 @@ def normalize_timestamp(ts_str):
         return None
 
 
-def compare_data(uplink_data, domoticz_data):
-    """Compare myUplink and Domoticz data."""
-    print("\n" + "=" * 80)
-    print("DATA COMPARISON")
-    print("=" * 80)
+def create_time_lookup(data, time_key, is_uplink=True):
+    """Create lookup dictionary by normalized time."""
+    lookup = {}
+    for point in data:
+        if is_uplink:
+            normalized_time = normalize_timestamp(point["timestamp"])
+        else:
+            normalized_time = point[time_key]  # Already in YYYY-MM-DD HH:MM format
 
-    # Create lookup dictionaries
-    uplink_by_time = {}
-    for point in uplink_data:
-        normalized_time = normalize_timestamp(point["timestamp"])
         if normalized_time:
-            if normalized_time not in uplink_by_time:
-                uplink_by_time[normalized_time] = []
-            uplink_by_time[normalized_time].append(point["flow"])
+            if normalized_time not in lookup:
+                lookup[normalized_time] = []
+            lookup[normalized_time].append(point["flow"])
+    return lookup
 
-    domoticz_by_time = {}
-    for point in domoticz_data:
-        time_key = point["datetime"]  # Already in YYYY-MM-DD HH:MM format
-        if time_key not in domoticz_by_time:
-            domoticz_by_time[time_key] = []
-        domoticz_by_time[time_key].append(point["flow"])
 
-    print(f"\nMyUplink unique time slots: {len(uplink_by_time)}")
-    print(f"Domoticz unique time slots: {len(domoticz_by_time)}")
-
-    # Analyze overlaps
-    matching_times = set(uplink_by_time.keys()) & set(domoticz_by_time.keys())
-    uplink_only = set(uplink_by_time.keys()) - set(domoticz_by_time.keys())
-    domoticz_only = set(domoticz_by_time.keys()) - set(uplink_by_time.keys())
+def analyze_overlaps(uplink_times, domoticz_times):
+    """Analyze overlaps between time slot sets."""
+    matching_times = set(uplink_times.keys()) & set(domoticz_times.keys())
+    uplink_only = set(uplink_times.keys()) - set(domoticz_times.keys())
+    domoticz_only = set(domoticz_times.keys()) - set(uplink_times.keys())
 
     print(f"\n✓ Matching time slots: {len(matching_times)}")
     print(f"⚠️  myUplink only: {len(uplink_only)}")
     print(f"⚠️  Domoticz only: {len(domoticz_only)}")
 
-    # Compare values at matching times
-    print("\n" + "-" * 80)
-    print("DETAILED COMPARISON AT MATCHING TIME SLOTS")
-    print("-" * 80)
+    return matching_times, uplink_only, domoticz_only
 
+
+def compare_matching_values(matching_times, uplink_by_time, domoticz_by_time):
+    """Compare values at matching time slots."""
     discrepancies = []
     matches = []
 
@@ -174,27 +169,38 @@ def compare_data(uplink_data, domoticz_data):
         pct_diff = (difference / max(uplink_avg, domoticz_avg, 1)) * 100
 
         if difference > 0.01:  # More than 0.01 l/min difference
-            discrepancies.append({
-                "time": time_slot,
-                "uplink": uplink_avg,
-                "domoticz": domoticz_avg,
-                "diff": difference,
-                "pct_diff": pct_diff,
-            })
+            discrepancies.append(
+                {
+                    "time": time_slot,
+                    "uplink": uplink_avg,
+                    "domoticz": domoticz_avg,
+                    "diff": difference,
+                    "pct_diff": pct_diff,
+                }
+            )
         else:
-            matches.append({
-                "time": time_slot,
-                "uplink": uplink_avg,
-                "domoticz": domoticz_avg,
-            })
+            matches.append(
+                {
+                    "time": time_slot,
+                    "uplink": uplink_avg,
+                    "domoticz": domoticz_avg,
+                }
+            )
 
+    return matches, discrepancies
+
+
+def display_comparison_results(matches, discrepancies):
+    """Display detailed comparison results."""
     # Show matches first
     if matches:
         print(f"\n✓ {len(matches)} time slots with MATCHING values (within 0.01 l/min):")
         print("\n  Time              myUplink    Domoticz    Diff")
         print("  " + "-" * 50)
         for match in matches[:5]:  # Show first 5
-            print(f"  {match['time']}    {match['uplink']:6.2f}      {match['domoticz']:6.2f}      ✓")
+            print(
+                f"  {match['time']}    {match['uplink']:6.2f}      {match['domoticz']:6.2f}      ✓"
+            )
         if len(matches) > 5:
             print(f"  ... and {len(matches) - 5} more matching slots")
 
@@ -209,6 +215,33 @@ def compare_data(uplink_data, domoticz_data):
             )
         if len(discrepancies) > 10:
             print(f"  ... and {len(discrepancies) - 10} more discrepancies")
+
+
+def compare_data(uplink_data, domoticz_data):
+    """Compare myUplink and Domoticz data."""
+    print("\n" + "=" * 80)
+    print("DATA COMPARISON")
+    print("=" * 80)
+
+    # Create lookup dictionaries
+    uplink_by_time = create_time_lookup(uplink_data, None, is_uplink=True)
+    domoticz_by_time = create_time_lookup(domoticz_data, "datetime", is_uplink=False)
+
+    print(f"\nMyUplink unique time slots: {len(uplink_by_time)}")
+    print(f"Domoticz unique time slots: {len(domoticz_by_time)}")
+
+    # Analyze overlaps
+    matching_times, uplink_only, domoticz_only = analyze_overlaps(uplink_by_time, domoticz_by_time)
+
+    # Compare values at matching times
+    print("\n" + "-" * 80)
+    print("DETAILED COMPARISON AT MATCHING TIME SLOTS")
+    print("-" * 80)
+
+    matches, discrepancies = compare_matching_values(
+        matching_times, uplink_by_time, domoticz_by_time
+    )
+    display_comparison_results(matches, discrepancies)
 
     return {
         "matching_times": len(matching_times),
@@ -250,23 +283,27 @@ def calculate_totals(uplink_data, domoticz_data):
     uplink_active = len([p for p in uplink_data if p["flow"] > 0])
     domoticz_active = len([p for p in domoticz_data if p["flow"] > 0])
 
-    print(f"\nmyUplink active readings: {uplink_active} ({uplink_active/len(uplink_data)*100:.1f}%)")
-    print(f"Domoticz active readings: {domoticz_active} ({domoticz_active/len(domoticz_data)*100:.1f}%)")
+    print(
+        f"\nmyUplink active readings: {uplink_active} ({uplink_active / len(uplink_data) * 100:.1f}%)"
+    )
+    print(
+        f"Domoticz active readings: {domoticz_active} ({domoticz_active / len(domoticz_data) * 100:.1f}%)"
+    )
 
     # Statistics
     uplink_flows = [p["flow"] for p in uplink_data if p["flow"] > 0]
     domoticz_flows = [p["flow"] for p in domoticz_data if p["flow"] > 0]
 
     if uplink_flows and domoticz_flows:
-        print(f"\nmyUplink when active:")
+        print("\nmyUplink when active:")
         print(f"  Min:  {min(uplink_flows):6.2f} l/min")
         print(f"  Max:  {max(uplink_flows):6.2f} l/min")
-        print(f"  Avg:  {sum(uplink_flows)/len(uplink_flows):6.2f} l/min")
+        print(f"  Avg:  {sum(uplink_flows) / len(uplink_flows):6.2f} l/min")
 
-        print(f"\nDomoticz when active:")
+        print("\nDomoticz when active:")
         print(f"  Min:  {min(domoticz_flows):6.2f} l/min")
         print(f"  Max:  {max(domoticz_flows):6.2f} l/min")
-        print(f"  Avg:  {sum(domoticz_flows)/len(domoticz_flows):6.2f} l/min")
+        print(f"  Avg:  {sum(domoticz_flows) / len(domoticz_flows):6.2f} l/min")
 
 
 def main():
@@ -310,7 +347,7 @@ def main():
     print(f"\nData in myUplink only:  {comparison['uplink_only']}")
     print(f"Data in Domoticz only:  {comparison['domoticz_only']}")
 
-    if comparison['discrepancies'] > 0:
+    if comparison["discrepancies"] > 0:
         print(f"\n⚠️  ALERT: Found {comparison['discrepancies']} discrepancies!")
         print("\nThis suggests:")
         print("  1. Different data sources or aggregation methods")

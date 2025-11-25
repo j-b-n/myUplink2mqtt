@@ -43,7 +43,7 @@ Environment="MQTT_BROKER_HOST=10.0.0.2"
 Environment="MQTT_BROKER_PORT=1883"
 Environment="MQTT_BASE_TOPIC=myuplink"
 Environment="HA_DISCOVERY_PREFIX=homeassistant"
-Environment="POLL_INTERVAL=300"
+Environment="POLL_INTERVAL=60"
 
 # Optional: Set a nice priority (-5 to 19, lower is higher priority)
 # Leave as-is for normal priority, or adjust if needed

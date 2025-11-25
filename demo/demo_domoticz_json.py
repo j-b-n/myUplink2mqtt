@@ -351,11 +351,7 @@ def show_mqtt_devices(client, json_output=False):
         logger.info("No devices found")
         return
 
-    mqtt_devices = [
-        d
-        for d in devices
-        if "MQTT" in d.get("HardwareName", "")
-    ]
+    mqtt_devices = [d for d in devices if "MQTT" in d.get("HardwareName", "")]
 
     if not mqtt_devices:
         logger.info("No MQTT-based devices found")
@@ -483,9 +479,7 @@ def main():
     )
 
     if client is None:
-        logger.error(
-            f"Failed to connect to Domoticz at {args.domoticz_host}:{args.domoticz_port}"
-        )
+        logger.error(f"Failed to connect to Domoticz at {args.domoticz_host}:{args.domoticz_port}")
         sys.exit(1)
 
     logger.info("✓ Connected to Domoticz\n")

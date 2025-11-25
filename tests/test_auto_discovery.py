@@ -35,12 +35,12 @@ class TestNormalizeUnit:
         assert normalize_unit("rh%") == "%"
 
     def test_normalize_water_flow_liter_per_minute(self):
-        """Test normalization of water flow l/m to l/hr."""
-        assert normalize_unit("l/m") == "l/hr"
+        """Test normalization of water flow l/m to L/min."""
+        assert normalize_unit("l/m") == "L/min"
 
     def test_normalize_water_flow_liter_per_hour(self):
-        """Test normalization of water flow l/hr stays as l/hr."""
-        assert normalize_unit("l/hr") == "l/hr"
+        """Test normalization of water flow l/hr to L/h."""
+        assert normalize_unit("l/hr") == "L/h"
 
     def test_normalize_standard_unit(self):
         """Test that standard units are returned unchanged."""
@@ -253,7 +253,7 @@ class TestBuildDiscoveryPayload:
         """Return sample device information."""
         return {
             "id": "device123",
-            "device_name": "SAK",
+            "name": "SAK",
             "manufacturer": "IVT",
             "model": "GT",
             "serial": "ABC123",
@@ -342,11 +342,11 @@ class TestBuildDiscoveryPayload:
         )
 
         assert payload["device_class"] == "volume_flow_rate"
-        assert payload["unit_of_measurement"] == "l/hr"
+        assert payload["unit_of_measurement"] == "L/h"
         assert payload["state_class"] == "measurement"
 
     def test_payload_device_class_for_water_flow_conversion(self):
-        """Test payload converts l/m to l/hr with value template."""
+        """Test payload converts l/m to L/min with value template."""
         device_info = self.get_sample_device_info()
         parameter_info = self.get_sample_parameter_info()
         parameter_info["unit"] = "l/m"
@@ -358,10 +358,10 @@ class TestBuildDiscoveryPayload:
         )
 
         assert payload["device_class"] == "volume_flow_rate"
-        assert payload["unit_of_measurement"] == "l/hr"
+        assert payload["unit_of_measurement"] == "L/min"
         assert payload["state_class"] == "measurement"
         assert "value_template" in payload
-        assert "* 60" in payload["value_template"]
+        assert payload["value_template"] == "{{ value }}"
 
     def test_payload_binary_sensor_detection(self):
         """Test that bool values create binary sensor payloads."""
@@ -472,7 +472,7 @@ class TestPublishHaDiscovery:
         """Return sample device information."""
         return {
             "id": "device123",
-            "device_name": "SAK",
+            "name": "SAK",
             "manufacturer": "IVT",
             "model": "GT",
         }

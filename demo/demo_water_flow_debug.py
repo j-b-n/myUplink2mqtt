@@ -20,16 +20,15 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Any, Dict, List, Optional
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.domoticz_json_util import (
-    create_domoticz_client,
     DomoticzClient,
+    create_domoticz_client,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,9 +56,7 @@ def setup_logging(debug_mode=False):
     )
 
 
-def get_domoticz_analysis(
-    client: DomoticzClient, device_id: int
-) -> Optional[Dict[str, Any]]:
+def get_domoticz_analysis(client: DomoticzClient, device_id: int) -> Optional[Dict[str, Any]]:
     """Perform comprehensive Domoticz analysis for a device.
 
     Args:
@@ -87,7 +84,7 @@ def get_domoticz_analysis(
     if not device:
         analysis["status"] = "ERROR"
         analysis["errors"].append(f"Device {device_id} not found")
-        print(f"✗ Device not found")
+        print("✗ Device not found")
         return analysis
 
     analysis["device_details"] = device
@@ -99,7 +96,7 @@ def get_domoticz_analysis(
 
     # Check if data is being updated
     try:
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         last_update_str = device.get("LastUpdate")
         if last_update_str:
@@ -111,7 +108,7 @@ def get_domoticz_analysis(
                 analysis["errors"].append(
                     f"Data is stale: last update was {time_diff.total_seconds() / 60:.0f} minutes ago"
                 )
-                print(f"  ⚠️  WARNING: Data is older than 1 hour")
+                print("  ⚠️  WARNING: Data is older than 1 hour")
             elif time_diff.total_seconds() > 600:  # Older than 10 minutes
                 print(f"  ⚠️  Note: Data is {time_diff.total_seconds() / 60:.0f} minutes old")
     except Exception as e:
@@ -127,7 +124,7 @@ def get_domoticz_analysis(
             if response and response.get("status") == "OK" and "result" in response:
                 result_data = response.get("result", [])
                 analysis[f"flow_data_{range_type}"] = result_data
-                
+
                 if result_data:
                     # Calculate statistics from flow data
                     flow_values = [float(point.get("v", 0)) for point in result_data]
@@ -135,8 +132,10 @@ def get_domoticz_analysis(
                     max_flow = max(flow_values) if flow_values else 0
                     avg_flow = sum(flow_values) / len(flow_values) if flow_values else 0
                     total_flow = sum(flow_values)
-                    
-                    print(f"  ✓ {range_type.upper():>6} data: {len(result_data)} points | Min={min_flow:.2f} Max={max_flow:.2f} Avg={avg_flow:.4f} Total={total_flow:.2f} l/min")
+
+                    print(
+                        f"  ✓ {range_type.upper():>6} data: {len(result_data)} points | Min={min_flow:.2f} Max={max_flow:.2f} Avg={avg_flow:.4f} Total={total_flow:.2f} l/min"
+                    )
                 else:
                     print(f"  ✗ {range_type.upper():>6} data: No data points")
             else:
@@ -179,7 +178,7 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
             max_flow = max(flow_values)
             avg_flow = sum(flow_values) / len(flow_values)
             total_flow = sum(flow_values)
-            
+
             flows["daily_stats"] = {
                 "points": len(flow_values),
                 "min": min_flow,
@@ -187,8 +186,8 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 "avg": avg_flow,
                 "total": total_flow,
             }
-            
-            print(f"\nDaily Flow (today):")
+
+            print("\nDaily Flow (today):")
             print(f"  Data Points: {len(flow_values)}")
             print(f"  Min Flow: {min_flow:.4f} l/min")
             print(f"  Max Flow: {max_flow:.4f} l/min")
@@ -204,7 +203,7 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
             max_flow = max(flow_values)
             avg_flow = sum(flow_values) / len(flow_values)
             total_flow = sum(flow_values)
-            
+
             flows["monthly_stats"] = {
                 "points": len(flow_values),
                 "min": min_flow,
@@ -212,8 +211,8 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 "avg": avg_flow,
                 "total": total_flow,
             }
-            
-            print(f"\nMonthly Flow (this month):")
+
+            print("\nMonthly Flow (this month):")
             print(f"  Data Points: {len(flow_values)}")
             print(f"  Min Flow: {min_flow:.4f} l/min")
             print(f"  Max Flow: {max_flow:.4f} l/min")
@@ -229,7 +228,7 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
             max_flow = max(flow_values)
             avg_flow = sum(flow_values) / len(flow_values)
             total_flow = sum(flow_values)
-            
+
             flows["yearly_stats"] = {
                 "points": len(flow_values),
                 "min": min_flow,
@@ -237,8 +236,8 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 "avg": avg_flow,
                 "total": total_flow,
             }
-            
-            print(f"\nYearly Flow (this year):")
+
+            print("\nYearly Flow (this year):")
             print(f"  Data Points: {len(flow_values)}")
             print(f"  Min Flow: {min_flow:.4f} l/min")
             print(f"  Max Flow: {max_flow:.4f} l/min")
@@ -248,31 +247,14 @@ def calculate_flow_rates(analysis: Dict[str, Any]) -> Dict[str, Any]:
     return flows
 
 
-def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
-    """Check for data consistency and anomalies.
-
-    Args:
-        analysis: Analysis data.
-        flows: Flow rate calculations.
-    """
-    print("\n" + "=" * 70)
-    print("DATA CONSISTENCY CHECKS")
-    print("=" * 70)
-
-    checks = {
-        "passed": 0,
-        "warnings": 0,
-        "errors": 0,
-        "issues": [],
-    }
-
-    # Check 1: Device is being updated
+def check_update_frequency(analysis: Dict[str, Any], checks: Dict[str, Any]):
+    """Check if device is being updated regularly."""
     device = analysis.get("device_details", {})
     last_update = device.get("LastUpdate")
 
     if last_update:
         try:
-            from datetime import datetime, timedelta
+            from datetime import datetime
 
             last_update_dt = datetime.strptime(last_update, "%Y-%m-%d %H:%M:%S")
             time_diff = datetime.now() - last_update_dt
@@ -293,7 +275,9 @@ def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
     else:
         print("? SKIP: No last update timestamp")
 
-    # Check 2: Flow data has data points
+
+def check_flow_data_availability(analysis: Dict[str, Any], checks: Dict[str, Any]):
+    """Check if flow data has data points."""
     day_flow_data = analysis.get("flow_data_day", [])
     if day_flow_data and len(day_flow_data) > 0:
         print(f"✓ PASS: Flow data has {len(day_flow_data)} data points")
@@ -303,7 +287,9 @@ def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
         checks["errors"] += 1
         checks["issues"].append("No flow data points from API")
 
-    # Check 3: Flow rates are reasonable
+
+def check_flow_rates_reasonable(flows: Dict[str, Any], checks: Dict[str, Any]):
+    """Check if flow rates are reasonable."""
     daily_stats = flows.get("daily_stats")
     if daily_stats and daily_stats.get("max", 0) > 0:
         max_flow = daily_stats.get("max", 0)
@@ -318,13 +304,15 @@ def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
         print("⚠ WARN: Could not calculate flow statistics")
         checks["warnings"] += 1
 
-    # Check 4: Data points are consistent
-    day_flow_values = []
+
+def check_data_point_validity(analysis: Dict[str, Any], checks: Dict[str, Any]):
+    """Check if data points are consistent and valid."""
+    day_flow_data = analysis.get("flow_data_day", [])
     if day_flow_data:
         try:
             day_flow_values = [float(point.get("v", 0)) for point in day_flow_data]
             if all(v >= 0 for v in day_flow_values):
-                print(f"✓ PASS: All flow values are valid (non-negative)")
+                print("✓ PASS: All flow values are valid (non-negative)")
                 checks["passed"] += 1
             else:
                 print("✗ FAIL: Found negative flow values")
@@ -335,7 +323,9 @@ def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
             checks["errors"] += 1
             checks["issues"].append("Invalid flow data format")
 
-    # Summary
+
+def print_consistency_summary(checks: Dict[str, Any]):
+    """Print summary of consistency checks."""
     print("\n" + "-" * 70)
     print(f"Checks Passed: {checks['passed']}")
     print(f"Warnings: {checks['warnings']}")
@@ -345,6 +335,34 @@ def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
         print("\nIssues Found:")
         for issue in checks["issues"]:
             print(f"  - {issue}")
+
+
+def check_data_consistency(analysis: Dict[str, Any], flows: Dict[str, Any]):
+    """Check for data consistency and anomalies.
+
+    Args:
+        analysis: Analysis data.
+        flows: Flow rate calculations.
+    """
+    print("\n" + "=" * 70)
+    print("DATA CONSISTENCY CHECKS")
+    print("=" * 70)
+
+    checks = {
+        "passed": 0,
+        "warnings": 0,
+        "errors": 0,
+        "issues": [],
+    }
+
+    # Perform all checks
+    check_update_frequency(analysis, checks)
+    check_flow_data_availability(analysis, checks)
+    check_flow_rates_reasonable(flows, checks)
+    check_data_point_validity(analysis, checks)
+
+    # Print summary
+    print_consistency_summary(checks)
 
     return checks
 
@@ -366,7 +384,6 @@ def generate_mqtt_discovery_config(
 
     device_id = device.get("idx")
     device_name = device.get("Name")
-    hw_name = device.get("HardwareName")
 
     if not device_id:
         print("✗ Cannot generate config: no device ID")
@@ -440,9 +457,9 @@ def diagnose_issues(analysis: Dict[str, Any]) -> List[str]:
     # Check 2: Device status
     status = device.get("Status")
     if status is None or status == "None":
-        print("ℹ  Device status is 'None' (normal for waterflow sensors)")
+        print("i  Device status is 'None' (normal for waterflow sensors)")
     else:
-        print(f"ℹ  Device status: {status}")
+        print(f"i  Device status: {status}")
 
     # Check 3: Hidden/protected status
     hidden = device.get("Hidden", 0)
@@ -453,7 +470,7 @@ def diagnose_issues(analysis: Dict[str, Any]) -> List[str]:
         diagnostics.append("Device is hidden - may affect visibility")
 
     if protected:
-        print("ℹ  Device is protected")
+        print("i  Device is protected")
 
     if not diagnostics:
         print("\n✓ No issues detected!")
@@ -547,7 +564,7 @@ Examples:
 
     flows = calculate_flow_rates(analysis)
     checks = check_data_consistency(analysis, flows)
-    diagnostics = diagnose_issues(analysis)
+    diagnose_issues(analysis)
 
     # Generate MQTT config
     device = analysis.get("device_details")

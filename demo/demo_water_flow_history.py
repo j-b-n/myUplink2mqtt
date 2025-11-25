@@ -28,16 +28,15 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Any, Dict, Optional
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.domoticz_json_util import (
-    create_domoticz_client,
     DomoticzClient,
+    create_domoticz_client,
 )
 
 # Configure logging
@@ -89,7 +88,7 @@ def find_water_flow_sensor(
 
     device = client.get_device_by_name(sensor_name)
     if device:
-        print(f"✓ Found sensor!")
+        print("✓ Found sensor!")
         print(f"  Device ID: {device.get('idx')}")
         print(f"  Name: {device.get('Name')}")
         print(f"  Type: {device.get('Type')}")
@@ -112,8 +111,11 @@ def find_water_flow_sensor(
 
 
 def fetch_device_history(
-    client: DomoticzClient, device_id: int, sensor_type: str = "Percentage",
-    range_type: str = "day", method: int = 1
+    client: DomoticzClient,
+    device_id: int,
+    sensor_type: str = "Percentage",
+    range_type: str = "day",
+    method: int = 1,
 ) -> Optional[Dict[str, Any]]:
     """Fetch historical data points for a waterflow device.
 
@@ -152,7 +154,7 @@ def fetch_device_history(
             response = client._make_request(endpoint)
 
             if response and response.get("status") not in ("ERR", "ERROR"):
-                print(f"✓ Successfully fetched data from:")
+                print("✓ Successfully fetched data from:")
                 print(f"   {endpoint}")
                 return response
             elif response:
@@ -161,7 +163,7 @@ def fetch_device_history(
         except Exception as e:
             logger.debug(f"Error with endpoint {endpoint}: {e}")
 
-    print(f"✗ Failed to fetch historical data with standard endpoints")
+    print("✗ Failed to fetch historical data with standard endpoints")
     return None
 
 
@@ -283,18 +285,13 @@ def list_all_flow_sensors(client: DomoticzClient):
         print("No devices found")
         return
 
-    flow_sensors = [
-        d for d in devices if "flow" in d.get("Name", "").lower()
-    ]
+    flow_sensors = [d for d in devices if "flow" in d.get("Name", "").lower()]
 
     if flow_sensors:
         print(f"\n✓ Found {len(flow_sensors)} flow sensor(s):\n")
         for sensor in flow_sensors:
             print(f"  ID: {sensor.get('idx'):>3} | Name: {sensor.get('Name')}")
-            print(
-                f"       Type: {sensor.get('Type')}, "
-                f"SubType: {sensor.get('SubType')}"
-            )
+            print(f"       Type: {sensor.get('Type')}, SubType: {sensor.get('SubType')}")
             print(f"       Status: {sensor.get('Status')}")
             print(f"       Last Update: {sensor.get('LastUpdate')}")
             print()
@@ -305,9 +302,7 @@ def list_all_flow_sensors(client: DomoticzClient):
             print(f"  ID: {device.get('idx'):>3} | {device.get('Name')}")
 
 
-def debug_sensor_response(
-    client: DomoticzClient, device_id: int
-) -> Optional[Dict[str, Any]]:
+def debug_sensor_response(client: DomoticzClient, device_id: int) -> Optional[Dict[str, Any]]:
     """Debug sensor by fetching raw response in multiple formats.
 
     Args:
@@ -333,12 +328,12 @@ def debug_sensor_response(
         try:
             response = client._make_request(endpoint)
             if response:
-                print(f"✓ Response received")
+                print("✓ Response received")
                 results[endpoint] = response
                 # Print first 500 chars of response
                 print(f"   Preview: {str(response)[:200]}...")
             else:
-                print(f"✗ No response (None)")
+                print("✗ No response (None)")
         except Exception as e:
             print(f"✗ Error: {e}")
 
@@ -451,10 +446,10 @@ Examples:
 
     if not client:
         print("\n✗ Failed to connect to Domoticz server")
-        print(f"  Please check:")
+        print("  Please check:")
         print(f"  - Server is running at {args.domoticz_host}:{args.domoticz_port}")
-        print(f"  - Firewall allows access")
-        print(f"  - Credentials are correct (if required)")
+        print("  - Firewall allows access")
+        print("  - Credentials are correct (if required)")
         return 1
 
     print("✓ Connected to Domoticz server\n")
@@ -485,8 +480,7 @@ Examples:
     # Fetch historical data
     device_id = device.get("idx")
     history_data = fetch_device_history(
-        client, device_id, sensor_type=args.sensor_type, range_type=args.range,
-        method=args.method
+        client, device_id, sensor_type=args.sensor_type, range_type=args.range, method=args.method
     )
 
     if history_data:

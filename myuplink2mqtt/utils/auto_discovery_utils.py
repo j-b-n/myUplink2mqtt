@@ -31,8 +31,9 @@ def normalize_unit(unit):
     # Map non-standard units to standard representations
     unit_normalization_map = {
         "rh%": "%",  # Relative humidity: rh% -> %
-        "l/m": "l/hr",  # Liters per minute: l/m -> l/hr (60x conversion)
-        "l/hr": "l/hr",  # Liters per hour: already in desired format
+        "l/m": "L/min",  # Liters per minute: l/m -> L/min (HA compatible)
+        "l/hr": "L/h",  # Liters per hour: l/hr -> L/h (HA compatible)
+        "m³/h": "m³/h",  # Cubic meters per hour: already HA compatible
     }
     return unit_normalization_map.get(unit, unit)
 
@@ -61,7 +62,9 @@ def get_unit_to_device_class_mapping():
         "hPa": "pressure",
         "l/m": "volume_flow_rate",
         "l/min": "volume_flow_rate",
+        "L/min": "volume_flow_rate",
         "l/hr": "volume_flow_rate",
+        "L/h": "volume_flow_rate",
         "m³/h": "volume_flow_rate",
     }
 
@@ -293,11 +296,11 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     device_class = determine_device_class(parameter_info.get("unit", ""), parameter_info["id"])
 
     # Clean the parameter name to remove device name prefix
-    clean_name = clean_parameter_name(parameter_info["name"], device_info["device_name"])
+    clean_name = clean_parameter_name(parameter_info["name"], device_info["name"])
 
     discovery_payload = {
         "name": clean_name,
-        "object_id": f"myuplink_{device_info['id']}_{parameter_info['id']}",
+        "default_entity_id": f"myuplink_{device_info['id']}_{parameter_info['id']}",
         "unique_id": f"myuplink_{device_info['id']}_{parameter_info['id']}",
         "state_topic": state_topic,
         "availability_topic": availability_topic,
@@ -312,7 +315,7 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
         },
         "device": {
             "identifiers": [f"myuplink_{device_info['id']}"],
-            "device_name": device_info["device_name"],
+            "name": device_info["name"],
             "manufacturer": device_info["manufacturer"],
             "model": device_info["model"],
         },
@@ -340,9 +343,10 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
             discovery_payload["device_class"] = device_class
 
         # Add value template for unit conversions
-#        if original_unit == "l/m" and unit == "l/hr":
-#            # Convert liters per minute to liters per hour (multiply by 60)
-#            discovery_payload["value_template"] = "{{ (value | float(0) * 60) | round(2) }}"
+        if original_unit == "l/m" and unit == "L/min":
+            # Convert liters per minute to liters per minute (no conversion needed for HA)
+            # But we keep the template for consistency
+            discovery_payload["value_template"] = "{{ value }}"
 
         # Add state class for numeric sensors
         if not is_binary and unit:
@@ -418,6 +422,11 @@ def publish_ha_discovery(
         discovery_payload = build_discovery_payload(
             device_info, parameter_info, state_topic, availability_topic
         )
+
+        # Add command_topic for text entities (required by HA)
+        if component == "text":
+            command_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_info['id']}/set"
+            discovery_payload["command_topic"] = command_topic
 
         # Log the discovery payload for debugging
         logger.debug(f"Discovery payload for {unique_id}: {json.dumps(discovery_payload)}")

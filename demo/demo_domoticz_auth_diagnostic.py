@@ -9,7 +9,6 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
@@ -73,7 +72,7 @@ def test_no_auth(host, port):
                 pass
             return True
         elif response.status_code == 401:
-            print("  ℹ Information: Authentication IS required")
+            print("  i Information: Authentication IS required")
             return False
         else:
             print(f"  ? Unexpected status code: {response.status_code}")
@@ -187,7 +186,7 @@ def print_recommendations(no_auth_works, with_auth_works, credentials_tested):
         print("  ✓ How to use the script:")
         print("    python demo_domoticz_json.py --domoticz-host 10.0.0.100")
         print()
-        print("  ℹ Note: You do NOT need to provide username/password")
+        print("  i Note: You do NOT need to provide username/password")
         print()
 
     elif with_auth_works:
@@ -195,8 +194,8 @@ def print_recommendations(no_auth_works, with_auth_works, credentials_tested):
         print()
         username, password = credentials_tested
         print("  ✓ How to use the script:")
-        print(f"    python demo_domoticz_json.py \\")
-        print(f"      --domoticz-host 10.0.0.100 \\")
+        print("    python demo_domoticz_json.py \\")
+        print("      --domoticz-host 10.0.0.100 \\")
         print(f"      --domoticz-username {username} \\")
         print(f"      --domoticz-password {password}")
         print()
@@ -216,16 +215,14 @@ def print_recommendations(no_auth_works, with_auth_works, credentials_tested):
         print("    4. Verify username and password there")
         print("    5. Look for API token or authorization settings")
         print()
-        print("  ℹ If authentication is not enabled:")
+        print("  i If authentication is not enabled:")
         print("    python demo_domoticz_json.py --domoticz-host 10.0.0.100")
         print()
 
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Domoticz Authentication Diagnostic Tool"
-    )
+    parser = argparse.ArgumentParser(description="Domoticz Authentication Diagnostic Tool")
 
     parser.add_argument(
         "--domoticz-host",

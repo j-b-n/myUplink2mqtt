@@ -688,9 +688,7 @@ def validate_domoticz_devices(discovery_prefix, expected_device_count=13):
 
     """
     if not DOMOTICZ_HOST:
-        logger.info(
-            "Domoticz host not configured. Skipping device validation.\n"
-        )
+        logger.info("Domoticz host not configured. Skipping device validation.\n")
         return True
 
     logger.info("")
@@ -709,9 +707,7 @@ def validate_domoticz_devices(discovery_prefix, expected_device_count=13):
     )
 
     if client is None:
-        logger.error(
-            f"❌ ERROR: Could not connect to Domoticz at {DOMOTICZ_HOST}:{DOMOTICZ_PORT}"
-        )
+        logger.error(f"❌ ERROR: Could not connect to Domoticz at {DOMOTICZ_HOST}:{DOMOTICZ_PORT}")
         return False
 
     logger.info(f"✓ Connected to Domoticz at {DOMOTICZ_HOST}:{DOMOTICZ_PORT}")
@@ -723,9 +719,7 @@ def validate_domoticz_devices(discovery_prefix, expected_device_count=13):
     logger.info("📊 Device Summary:")
     logger.info(f"  Total devices in Domoticz: {validation['total_devices']}")
     logger.info(f"  MQTT-based devices: {validation['mqtt_devices']}")
-    logger.info(
-        f"  Auto-discovered device instances: {validation['mqtt_auto_discovery_devices']}"
-    )
+    logger.info(f"  Auto-discovered device instances: {validation['mqtt_auto_discovery_devices']}")
     logger.info(f"  Unique auto-discovery IDs: {validation['unique_auto_discovery_ids']}")
     logger.info(f"  Expected unique devices: {expected_device_count}")
     logger.info("")
@@ -758,9 +752,7 @@ def validate_domoticz_devices(discovery_prefix, expected_device_count=13):
             logger.info("")
     else:
         logger.error("❌ ERROR: No auto-discovered devices found!")
-        logger.error(
-            "The MQTT discovery messages may not have been processed by Domoticz yet."
-        )
+        logger.error("The MQTT discovery messages may not have been processed by Domoticz yet.")
         logger.error("Possible causes:")
         logger.error("  1. MQTT broker connectivity issue")
         logger.error("  2. Domoticz MQTT plugin not enabled")

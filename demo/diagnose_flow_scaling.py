@@ -9,7 +9,6 @@ Checks:
 """
 
 import sys
-import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -125,13 +124,15 @@ def check_auto_discovery_config():
 
     try:
         # Try to read auto_discovery_utils.py
-        auto_disc_file = Path(__file__).parent.parent / "myuplink2mqtt" / "utils" / "auto_discovery_utils.py"
+        auto_disc_file = (
+            Path(__file__).parent.parent / "myuplink2mqtt" / "utils" / "auto_discovery_utils.py"
+        )
 
         if not auto_disc_file.exists():
             print(f"⚠️  File not found: {auto_disc_file}")
             return
 
-        with open(auto_disc_file, "r") as f:
+        with open(auto_disc_file) as f:
             content = f.read()
 
         # Search for waterflow/flow config
@@ -187,7 +188,7 @@ def calculate_probable_divider():
     print(f"  myUplink 3.1 → Domoticz {3.1 / int(probable_divider):.3f}")
 
     # Check common dividers
-    print(f"\n📊 TESTING COMMON DIVIDERS:")
+    print("\n📊 TESTING COMMON DIVIDERS:")
     print("   Divider    myUplink 11.3 → Domoticz    myUplink 3.1 → Domoticz")
     print("   " + "-" * 60)
 
@@ -195,7 +196,9 @@ def calculate_probable_divider():
         result_113 = 11.3 / divider
         result_31 = 3.1 / divider
         marker = "✓ MATCH!" if abs(result_113 - domoticz_max) < 0.01 else ""
-        print(f"   {divider:>6}     {result_113:>8.4f}                    {result_31:>8.4f}   {marker}")
+        print(
+            f"   {divider:>6}     {result_113:>8.4f}                    {result_31:>8.4f}   {marker}"
+        )
 
 
 def main():
@@ -205,7 +208,7 @@ def main():
     print("╚" + "=" * 78 + "╝")
 
     # Check device settings
-    device = check_device_settings()
+    check_device_settings()
 
     # Check MQTT
     check_mqtt_payload()

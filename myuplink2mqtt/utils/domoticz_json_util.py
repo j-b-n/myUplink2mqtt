@@ -32,7 +32,9 @@ DOMOTICZ_API_VERSION = "/json.htm?type=command&param=getversion"
 DOMOTICZ_API_DEVICES = "/json.htm?type=command&param=getdevices&filter=all&used=true"
 DOMOTICZ_API_DEVICE = "/json.htm?type=command&param=getdevices&idx={rid}"
 DOMOTICZ_API_DEVICES_HIDDEN = "/json.htm?type=command&param=getdevices&used=true&displayhidden=1"
-DOMOTICZ_API_DEVICES_FAVORITES = "/json.htm?type=command&param=getdevices&used=true&filter=all&favorite=1"
+DOMOTICZ_API_DEVICES_FAVORITES = (
+    "/json.htm?type=command&param=getdevices&used=true&filter=all&favorite=1"
+)
 DOMOTICZ_API_DEVICE_UPDATE = "/json.htm?type=command&param=udevice"
 DOMOTICZ_API_SCENE = "/json.htm?type=command&param=getscenes"
 DOMOTICZ_API_HARDWARE = "/json.htm?type=command&param=gethardware"
@@ -131,9 +133,7 @@ class DomoticzClient:
                 HTTP_STATUS_CREATED,
                 HTTP_STATUS_NO_CONTENT,
             ):
-                logger.error(
-                    f"API Error: Status {response.status_code} - {response.text}"
-                )
+                logger.error(f"API Error: Status {response.status_code} - {response.text}")
                 return None
 
             # No content responses return empty dict
@@ -266,9 +266,7 @@ class DomoticzClient:
 
         return matching
 
-    def validate_discovery_devices(
-        self, discovery_prefix: str
-    ) -> Dict[str, Any]:
+    def validate_discovery_devices(self, discovery_prefix: str) -> Dict[str, Any]:
         """Validate all MQTT-discovered devices.
 
         Args:
@@ -423,9 +421,7 @@ def create_domoticz_client(
     client = DomoticzClient(host, port, use_https, username, password)
 
     if not client.verify_connection():
-        logger.error(
-            f"Failed to connect to Domoticz at {host}:{port}"
-        )
+        logger.error(f"Failed to connect to Domoticz at {host}:{port}")
         return None
 
     logger.info(f"Connected to Domoticz at {host}:{port}")

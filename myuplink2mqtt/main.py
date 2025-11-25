@@ -46,7 +46,7 @@ MQTT_BASE_TOPIC = os.getenv("MQTT_BASE_TOPIC", "myuplink")
 HA_DISCOVERY_PREFIX = os.getenv("HA_DISCOVERY_PREFIX", "homeassistant")
 
 # Poll interval in seconds (can be overridden by command line)
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "120"))  # Default: 2 minutes
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))  # Default: 1 minute
 
 # MQTT client state
 MQTT_CONNECTED = False
@@ -138,7 +138,7 @@ def parse_arguments():
         "--poll",
         type=int,
         metavar="SECONDS",
-        help="Set poll interval in seconds (default: 300)",
+        help="Set poll interval in seconds (default: 60)",
     )
 
     parser.add_argument(
@@ -263,40 +263,44 @@ def extract_installation_date_values(points_data):
         tuple: (year, month, day, year_point, month_point, day_point) or (None, None, None, None, None, None).
 
     """
-    year = None
-    month = None
-    day = None
-    year_point = None
-    month_point = None
-    day_point = None
+    # Map param IDs to their corresponding variables
+    param_map = {
+        "8556": ("year", "year_point"),  # Year
+        "8557": ("month", "month_point"),  # Month
+        "8558": ("day", "day_point"),  # Day
+        "60305": ("year", "year_point"),  # Installation year (text not found)
+        "60306": ("month", "month_point"),  # Installation month (text not found)
+        "60307": ("day", "day_point"),  # Installation day (text not found)
+    }
+
+    values = {
+        "year": None,
+        "month": None,
+        "day": None,
+        "year_point": None,
+        "month_point": None,
+        "day_point": None,
+    }
 
     for point in points_data:
         param_id = point.get("parameterId")
-        # Try simple IDs first (8556, 8557, 8558)
-        if param_id == "8556":  # Year
-            year = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            year_point = point
-        elif param_id == "8557":  # Month
-            month = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            month_point = point
-        elif param_id == "8558":  # Day
-            day = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            day_point = point
-        # Also check text-not-found versions (60305, 60306, 60307) which map to same concepts
-        elif param_id == "60305":  # Installation year (text not found)
-            if year is None:  # Only use if we haven't found the simple version
-                year = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            year_point = point
-        elif param_id == "60306":  # Installation month (text not found)
-            if month is None:  # Only use if we haven't found the simple version
-                month = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            month_point = point
-        elif param_id == "60307":  # Installation day (text not found)
-            if day is None:  # Only use if we haven't found the simple version
-                day = int(point["value"]) if isinstance(point["value"], (int, float)) else None
-            day_point = point
+        if param_id in param_map:
+            var_name, point_var = param_map[param_id]
+            values[point_var] = point
+            # For simple IDs (855x), always set value; for text-not-found (603x), only if not set
+            if values[var_name] is None or not param_id.startswith("603"):
+                values[var_name] = (
+                    int(point["value"]) if isinstance(point["value"], (int, float)) else None
+                )
 
-    return year, month, day, year_point, month_point, day_point
+    return (
+        values["year"],
+        values["month"],
+        values["day"],
+        values["year_point"],
+        values["month_point"],
+        values["day_point"],
+    )
 
 
 def publish_sensor_state(mqtt_client, system_id, parameter_id, value, enum_values=None):
@@ -345,6 +349,132 @@ def publish_availability(mqtt_client, system_id, available=True):
     mqtt_client.publish(availability_topic, payload, qos=1, retain=True)
 
 
+def process_installation_date_parameter(
+    mqtt_client, device_info, system_id, year, month, day, send_discovery
+):
+    """Process installation date as a virtual parameter.
+
+    Args:
+        mqtt_client: MQTT client instance or None.
+        device_info (dict): Device information.
+        system_id (str): System ID.
+        year: Installation year component.
+        month: Installation month component.
+        day: Installation day component.
+        send_discovery (bool): Whether to send discovery.
+
+    Returns:
+        tuple: (points_published, discovery_sent)
+
+    """
+    points_published = 0
+    discovery_sent = 0
+
+    if year is not None and month is not None and day is not None:
+        installation_date_value = f"{year:04d}-{month:02d}-{day:02d}"
+        parameter_info = {
+            "id": "installation_date",
+            "name": "Installation date",
+            "value": installation_date_value,
+            "unit": "",
+            "value_type": "string",
+            "category": "diagnostic",
+            "enum_values": [],
+        }
+
+        if should_send_parameter(parameter_info):
+            if PUBLISH_TO_MQTT and mqtt_client is not None:
+                if send_discovery:
+                    publish_ha_discovery(
+                        mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
+                    )
+                    discovery_sent += 1
+
+                publish_sensor_state(
+                    mqtt_client,
+                    system_id,
+                    parameter_info["id"],
+                    parameter_info["value"],
+                    parameter_info.get("enum_values", []),
+                )
+
+            points_published += 1
+            logger.debug(
+                f"Published virtual parameter: {parameter_info['name']} = {installation_date_value}"
+            )
+
+    return points_published, discovery_sent
+
+
+def process_data_points(mqtt_client, device_info, system_id, points_data, send_discovery):
+    """Process each data point for the device.
+
+    Args:
+        mqtt_client: MQTT client instance or None.
+        device_info (dict): Device information.
+        system_id (str): System ID.
+        points_data (list): List of data points.
+        send_discovery (bool): Whether to send discovery.
+
+    Returns:
+        tuple: (points_published, discovery_sent)
+
+    """
+    points_published = 0
+    discovery_sent = 0
+
+    for point in points_data:
+        param_id = point.get("parameterId")
+        if param_id in (
+            "8556",
+            "8557",
+            "8558",
+            "60305",
+            "60306",
+            "60307",
+        ):
+            logger.debug(f"Skipping installation date component: {param_id}")
+            continue
+
+        parameter_info = {
+            "id": point["parameterId"],
+            "name": get_parameter_display_name(point),
+            "value": point["value"],
+            "unit": point.get("parameterUnit", ""),
+            "value_type": determine_value_type(point["value"]),
+            "category": determine_entity_category(
+                point["parameterId"], get_parameter_display_name(point)
+            ),
+            "enum_values": point.get("enumValues", []),
+            "strVal": point.get("strVal"),
+        }
+
+        if not should_send_parameter(parameter_info):
+            logger.debug(
+                f"Skipping parameter {parameter_info['id']}: {parameter_info['name']} (filtered)"
+            )
+            continue
+
+        if PUBLISH_TO_MQTT and mqtt_client is not None:
+            if send_discovery:
+                publish_ha_discovery(
+                    mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
+                )
+                discovery_sent += 1
+
+            publish_sensor_state(
+                mqtt_client,
+                system_id,
+                parameter_info["id"],
+                parameter_info["value"],
+                parameter_info.get("enum_values", []),
+            )
+
+        points_published += 1
+
+    return points_published, discovery_sent
+
+
 def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=False):
     """Process a single device: retrieve data and publish to MQTT.
 
@@ -359,7 +489,6 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
         bool: True if successful, False otherwise.
 
     """
-    # Get device details
     device_data = get_device_details(myuplink, device_id)
     if device_data is None:
         logger.error(f"Could not retrieve device details for {device_id}")
@@ -372,126 +501,36 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
 
     device_info = {
         "id": device_id,
-        "device_name": device_name,
+        "name": device_name,
         "manufacturer": manufacturer,
         "model": model,
         "serial": device_data.get("serialNumber", ""),
     }
     logger.debug(f"Processing device: {device_name} ({device_id})")
 
-    # Get all data points
     points_data = get_device_points(myuplink, device_id)
     if points_data is None:
         logger.error(f"Could not retrieve data points for {device_id}")
         return False
     logger.debug(f"Retrieved {len(points_data)} data points")
 
-    # Extract installation date components
-    year, month, day, year_point, month_point, day_point = extract_installation_date_values(
+    year, month, day, _year_point, _month_point, _day_point = extract_installation_date_values(
         points_data
     )
 
-    # Publish availability as online
     if PUBLISH_TO_MQTT and mqtt_client is not None:
         publish_availability(mqtt_client, system_id, available=True)
 
-    # Process installation date as a virtual parameter if all three components are available
-    points_published = 0
-    discovery_sent = 0
+    points_published, discovery_sent = process_installation_date_parameter(
+        mqtt_client, device_info, system_id, year, month, day, send_discovery
+    )
 
-    if year is not None and month is not None and day is not None:
-        # Create installation date parameter
-        installation_date_value = f"{year:04d}-{month:02d}-{day:02d}"
-        parameter_info = {
-            "id": "installation_date",
-            "name": "Installation date",
-            "value": installation_date_value,
-            "unit": "",
-            "value_type": "string",
-            "category": "diagnostic",
-            "enum_values": [],
-        }
+    additional_points, additional_discovery = process_data_points(
+        mqtt_client, device_info, system_id, points_data, send_discovery
+    )
 
-        # Check if parameter should be sent
-        if should_send_parameter(parameter_info):
-            # Publish to MQTT if not in debug mode
-            if PUBLISH_TO_MQTT and mqtt_client is not None:
-                # Publish Home Assistant discovery configuration (only on first cycle)
-                if send_discovery:
-                    publish_ha_discovery(
-                        mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
-                    )
-                    discovery_sent += 1
-
-                # Publish current state (every cycle)
-                publish_sensor_state(
-                    mqtt_client,
-                    system_id,
-                    parameter_info["id"],
-                    parameter_info["value"],
-                    parameter_info.get("enum_values", []),
-                )
-
-            points_published += 1
-            logger.debug(
-                f"Published virtual parameter: {parameter_info['name']} = {installation_date_value}"
-            )
-
-    # Process each data point
-    for point in points_data:
-        # Skip individual installation date parameters (they are combined into a virtual parameter)
-        # Skip both simple versions (8556, 8557, 8558) and text-not-found versions (60305, 60306, 60307)
-        param_id = point.get("parameterId")
-        if param_id in (
-            "8556",
-            "8557",
-            "8558",
-            "60305",
-            "60306",
-            "60307",
-        ):  # All installation date variants
-            logger.debug(f"Skipping installation date component: {param_id}")
-            continue
-
-        parameter_info = {
-            "id": point["parameterId"],
-            "name": get_parameter_display_name(point),
-            "value": point["value"],
-            "unit": point.get("parameterUnit", ""),
-            "value_type": determine_value_type(point["value"]),
-            "category": determine_entity_category(
-                point["parameterId"], get_parameter_display_name(point)
-            ),
-            "enum_values": point.get("enumValues", []),
-            "strVal": point.get("strVal"),  # Include strVal for filtering
-        }
-
-        # Check if parameter should be sent
-        if not should_send_parameter(parameter_info):
-            logger.debug(
-                f"Skipping parameter {parameter_info['id']}: {parameter_info['name']} (filtered)"
-            )
-            continue
-
-        # Publish to MQTT if not in debug mode
-        if PUBLISH_TO_MQTT and mqtt_client is not None:
-            # Publish Home Assistant discovery configuration (only on first cycle)
-            if send_discovery:
-                publish_ha_discovery(
-                    mqtt_client, device_info, parameter_info, system_id, HA_DISCOVERY_PREFIX
-                )
-                discovery_sent += 1
-
-            # Publish current state (every cycle)
-            publish_sensor_state(
-                mqtt_client,
-                system_id,
-                parameter_info["id"],
-                parameter_info["value"],
-                parameter_info.get("enum_values", []),
-            )
-
-        points_published += 1
+    points_published += additional_points
+    discovery_sent += additional_discovery
 
     if PUBLISH_TO_MQTT:
         if send_discovery:
