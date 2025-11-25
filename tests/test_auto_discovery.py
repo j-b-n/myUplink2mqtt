@@ -35,8 +35,8 @@ class TestNormalizeUnit:
         assert normalize_unit("rh%") == "%"
 
     def test_normalize_water_flow_liter_per_minute(self):
-        """Test normalization of water flow l/m to L/min."""
-        assert normalize_unit("l/m") == "L/min"
+        """Test normalization of water flow l/m to l/min."""
+        assert normalize_unit("l/m") == "l/min"
 
     def test_normalize_water_flow_liter_per_hour(self):
         """Test normalization of water flow l/hr to L/h."""
@@ -346,7 +346,7 @@ class TestBuildDiscoveryPayload:
         assert payload["state_class"] == "measurement"
 
     def test_payload_device_class_for_water_flow_conversion(self):
-        """Test payload converts l/m to L/min with value template."""
+        """Test payload converts l/m to l/min with value template."""
         device_info = self.get_sample_device_info()
         parameter_info = self.get_sample_parameter_info()
         parameter_info["unit"] = "l/m"
@@ -358,7 +358,7 @@ class TestBuildDiscoveryPayload:
         )
 
         assert payload["device_class"] == "volume_flow_rate"
-        assert payload["unit_of_measurement"] == "L/min"
+        assert payload["unit_of_measurement"] == "l/min"
         assert payload["state_class"] == "measurement"
         assert "value_template" in payload
         assert payload["value_template"] == "{{ value }}"

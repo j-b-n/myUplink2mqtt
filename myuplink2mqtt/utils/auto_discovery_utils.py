@@ -31,7 +31,7 @@ def normalize_unit(unit):
     # Map non-standard units to standard representations
     unit_normalization_map = {
         "rh%": "%",  # Relative humidity: rh% -> %
-        "l/m": "L/min",  # Liters per minute: l/m -> L/min (HA compatible)
+        "l/m": "l/min",  # Liters per minute: l/m -> l/min (HA compatible)
         "l/hr": "L/h",  # Liters per hour: l/hr -> L/h (HA compatible)
         "m³/h": "m³/h",  # Cubic meters per hour: already HA compatible
     }
@@ -62,7 +62,6 @@ def get_unit_to_device_class_mapping():
         "hPa": "pressure",
         "l/m": "volume_flow_rate",
         "l/min": "volume_flow_rate",
-        "L/min": "volume_flow_rate",
         "l/hr": "volume_flow_rate",
         "L/h": "volume_flow_rate",
         "m³/h": "volume_flow_rate",
@@ -203,9 +202,10 @@ def determine_entity_category(parameter_id, parameter_name):
 
     # Check if parameter name suggests diagnostic nature
     diagnostic_keywords = ["accumulated", "total", "starts", "runtime", "hours", "alarm", "error"]
-    param_lower = parameter_name.lower()
-    if any(keyword in param_lower for keyword in diagnostic_keywords):
-        return "diagnostic"
+    if parameter_name:
+        param_lower = parameter_name.lower()
+        if any(keyword in param_lower for keyword in diagnostic_keywords):
+            return "diagnostic"
 
     return None
 
@@ -315,7 +315,7 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
         },
         "device": {
             "identifiers": [f"myuplink_{device_info['id']}"],
-            "name": device_info["name"],
+            #"name": device_info["name"],
             "manufacturer": device_info["manufacturer"],
             "model": device_info["model"],
         },
@@ -343,7 +343,7 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
             discovery_payload["device_class"] = device_class
 
         # Add value template for unit conversions
-        if original_unit == "l/m" and unit == "L/min":
+        if original_unit == "l/m" and unit == "l/min":
             # Convert liters per minute to liters per minute (no conversion needed for HA)
             # But we keep the template for consistency
             discovery_payload["value_template"] = "{{ value }}"

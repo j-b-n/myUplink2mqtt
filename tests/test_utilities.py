@@ -913,3 +913,139 @@ class TestApiAvailability:
 
                     # Should return False on error
                     assert result is False
+
+
+# ============================================================================
+# Tests for Helper Functions
+# ============================================================================
+
+
+class TestExtractManufacturer:
+    """Test suite for extract_manufacturer function."""
+
+    def test_extract_manufacturer_with_space(self):
+        """Test extracting manufacturer from product name with space."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_manufacturer
+
+        assert extract_manufacturer("NIBE F2120") == "NIBE"
+        assert extract_manufacturer("IVT Greenline HT Plus") == "IVT"
+
+    def test_extract_manufacturer_without_space(self):
+        """Test extracting manufacturer from single-word product name."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_manufacturer
+
+        assert extract_manufacturer("Unknown") == "Unknown"
+        assert extract_manufacturer("SingleWord") == "Unknown"
+
+    def test_extract_manufacturer_empty_string(self):
+        """Test extracting manufacturer from empty string."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_manufacturer
+
+        assert extract_manufacturer("") == "Unknown"
+
+
+class TestExtractModel:
+    """Test suite for extract_model function."""
+
+    def test_extract_model_with_space(self):
+        """Test extracting model from product name with space."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_model
+
+        assert extract_model("NIBE F2120") == "F2120"
+        assert extract_model("IVT Greenline HT Plus") == "Greenline HT Plus"
+
+    def test_extract_model_without_space(self):
+        """Test extracting model from single-word product name."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_model
+
+        assert extract_model("Unknown") == "Unknown"
+        assert extract_model("SingleWord") == "SingleWord"
+
+    def test_extract_model_empty_string(self):
+        """Test extracting model from empty string."""
+        from myuplink2mqtt.utils.myuplink_utils import extract_model
+
+        assert extract_model("") == ""
+
+
+class TestAddAutoDiscoveryToPoints:
+    """Test suite for add_auto_discovery_to_points function."""
+
+    def test_add_auto_discovery_to_points(self):
+        """Test adding auto discovery payloads to data points."""
+        from myuplink2mqtt.utils.myuplink_utils import add_auto_discovery_to_points
+
+        device_info = {
+            "id": "device123",
+            "name": "NIBE F2120",
+            "manufacturer": "NIBE",
+            "model": "F2120",
+            "serial": "SN123456",
+        }
+
+        points_data = [
+            {
+                "parameterId": "40004",
+                "parameterName": "Outdoor Temperature",
+                "value": 23.5,
+                "parameterUnit": "°C",
+            },
+            {
+                "parameterId": "40940",
+                "parameterName": "Flow Rate",
+                "value": 12.3,
+                "parameterUnit": "l/m",
+            },
+        ]
+
+        system_id = "system_001"
+
+        # Add auto discovery to points
+        add_auto_discovery_to_points(points_data, device_info, system_id)
+
+        # Verify auto discovery was added
+        assert "autoDiscovery" in points_data[0]
+        assert "autoDiscovery" in points_data[1]
+
+        # Verify first point (temperature)
+        assert points_data[0]["autoDiscovery"] is not None
+        assert points_data[0]["autoDiscovery"]["unique_id"] == "myuplink_device123_40004"
+        assert points_data[0]["autoDiscovery"]["device_class"] == "temperature"
+        assert points_data[0]["autoDiscovery"]["unit_of_measurement"] == "°C"
+
+        # Verify second point (flow rate with unit conversion)
+        assert points_data[1]["autoDiscovery"] is not None
+        assert points_data[1]["autoDiscovery"]["unique_id"] == "myuplink_device123_40940"
+        assert points_data[1]["autoDiscovery"]["device_class"] == "volume_flow_rate"
+        assert points_data[1]["autoDiscovery"]["unit_of_measurement"] == "l/min"
+
+    def test_add_auto_discovery_handles_errors(self):
+        """Test that add_auto_discovery_to_points handles errors gracefully."""
+        from myuplink2mqtt.utils.myuplink_utils import add_auto_discovery_to_points
+
+        device_info = {
+            "id": "device123",
+            "name": "Test Device",
+            "manufacturer": "Test",
+            "model": "Model",
+            "serial": "",
+        }
+
+        # Create a point with invalid data
+        points_data = [
+            {
+                "parameterId": "99999",
+                "parameterName": None,  # Invalid - will cause issues
+                "value": None,
+                "parameterUnit": "",
+            }
+        ]
+
+        system_id = "system_001"
+
+        # Should not raise exception
+        add_auto_discovery_to_points(points_data, device_info, system_id)
+
+        # Auto discovery should still be added (might be None on error)
+        assert "autoDiscovery" in points_data[0]
+

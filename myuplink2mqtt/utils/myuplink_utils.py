@@ -16,6 +16,12 @@ import aiohttp
 from myuplink import Auth, MyUplinkAPI
 from requests_oauthlib import OAuth2Session
 
+from .auto_discovery_utils import (
+    build_discovery_payload,
+    determine_entity_category,
+    determine_value_type,
+)
+
 # Logger initialization
 logger = logging.getLogger(__name__)
 
@@ -474,6 +480,71 @@ def get_parameter_display_name(point):
     return parameter_name
 
 
+def extract_manufacturer(product_name):
+    """Extract manufacturer name from product name.
+
+    Args:
+        product_name (str): Full product name.
+
+    Returns:
+        str: Manufacturer name or "Unknown" if not found.
+
+    """
+    return product_name.split(" ", 1)[0] if " " in product_name else "Unknown"
+
+
+def extract_model(product_name):
+    """Extract model name from product name.
+
+    Args:
+        product_name (str): Full product name.
+
+    Returns:
+        str: Model name or full product name if no space found.
+
+    """
+    return product_name.split(" ", 1)[1] if " " in product_name else product_name
+
+
+def add_auto_discovery_to_points(points_data, device_info, system_id):
+    """Add auto discovery payloads to data points.
+
+    Args:
+        points_data (list): List of data points.
+        device_info (dict): Device information for discovery.
+        system_id (str): System ID for topics.
+
+    Returns:
+        None: Modifies points_data in place.
+
+    """
+    for point in points_data:
+        parameter_info = {
+            "id": point["parameterId"],
+            "name": point.get("parameterName", ""),
+            "value": point["value"],
+            "unit": point.get("parameterUnit", ""),
+            "value_type": determine_value_type(point["value"]),
+            "category": determine_entity_category(
+                point["parameterId"], point.get("parameterName", "")
+            ),
+            "enum_values": point.get("enumValues", []),
+        }
+
+        # Generate discovery payload
+        state_topic = f"myuplink/{system_id}/{point['parameterId']}/value"
+        availability_topic = f"myuplink/{system_id}/available"
+
+        try:
+            discovery_payload = build_discovery_payload(
+                device_info, parameter_info, state_topic, availability_topic
+            )
+            point["autoDiscovery"] = discovery_payload
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning(f"Failed to generate discovery for {point['parameterId']}: {e}")
+            point["autoDiscovery"] = None
+
+
 def save_api_data_to_file(myuplink, filename):
     """Save all myUplink API data to a JSON file.
 
@@ -536,6 +607,21 @@ def save_api_data_to_file(myuplink, filename):
             for point in points_data:
                 if "parameterName" in point:
                     point["parameterName"] = clean_parameter_name(point["parameterName"])
+
+            # Generate auto discovery information for each data point
+            # Prepare device info for discovery payload
+            device_info = {
+                "id": device_id,
+                "name": device_details.get("product", {}).get("name", "Unknown"),
+                "manufacturer": extract_manufacturer(
+                    device_details.get("product", {}).get("name", "")
+                ),
+                "model": extract_model(device_details.get("product", {}).get("name", "")),
+                "serial": device_details.get("serialNumber", ""),
+            }
+
+            # Add auto discovery payloads to each data point
+            add_auto_discovery_to_points(points_data, device_info, system_id)
 
             # Build device data structure
             device_data = {

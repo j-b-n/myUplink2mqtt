@@ -13,9 +13,13 @@ import os
 import sys
 import time
 from collections import defaultdict
+from pathlib import Path
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import utilities from the module
 from myuplink2mqtt.utils.myuplink_utils import (
