@@ -262,18 +262,18 @@ else:
 
 ## Usage in Demo Script
 
-The `demo_domoticz_autodiscovery.py` script uses this utility to validate
+The `domoticz_autodiscovery.py` script uses this utility to validate
 discovered devices after publishing MQTT discovery messages:
 
 ```bash
 # With Domoticz validation
-python demo/demo_domoticz_autodiscovery.py \
+python demo/domoticz_autodiscovery.py \
     --host 127.0.0.1 \
     --domoticz-host 192.168.1.100 \
     --domoticz-port 8080
 
 # With Domoticz authentication
-python demo/demo_domoticz_autodiscovery.py \
+python demo/domoticz_autodiscovery.py \
     --host 127.0.0.1 \
     --domoticz-host 192.168.1.100 \
     --domoticz-username admin \
@@ -381,6 +381,6 @@ The module requires:
 
 ## See Also
 
-- `demo/demo_domoticz_autodiscovery.py` - Demo script using this utility
+- `demo/domoticz_autodiscovery.py` - Demo script using this utility
 - `docs/DOMOTICZ_AUTODISCOVERY.md` - MQTT discovery documentation
 - `docs/DOMOTICZ_DEMO_README.md` - Demo script quick reference

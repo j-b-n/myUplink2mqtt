@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
     clean_parameter_name,
-    create_oauth_session,
+    create_api_client,
     get_device_details,
     get_device_points,
     get_parameter_display_name,
@@ -88,29 +88,18 @@ def display_enum_parameter(point):
     return True
 
 
-def process_device_enum_parameters(myuplink, device_id, device_name):
-    """
-    Process and display enum parameters for a single device.
+async def process_device_enum_parameters(myuplink, device_id, device_name):
+    """Process and display enum parameters for a single device."""
 
-    Args:
-        myuplink: OAuth session object
-        device_id: Device ID to process
-        device_name: Device name for display
-
-    Returns:
-        Number of enum parameters found for this device
-    """
     logger.info(f"\nDevice: {device_name} (ID: {device_id})")
     logger.info("-" * 80)
 
-    # Get ALL data points for this device
-    all_points_data = get_device_points(myuplink, device_id)
+    all_points_data = await get_device_points(myuplink, device_id)
 
     if all_points_data is None:
         logger.info(f"Could not retrieve data points for {device_id}")
         return 0
 
-    # Filter and display only parameters with enumValues
     device_enum_count = 0
     for point in all_points_data:
         if display_enum_parameter(point):
@@ -126,13 +115,12 @@ def process_device_enum_parameters(myuplink, device_id, device_name):
 
 async def display_enum_parameters():
     """Display all parameters with enumValues and their current values."""
+
+    session = None
     try:
-        # Create OAuth session
-        myuplink = create_oauth_session()
+        session, myuplink, _token_manager = await create_api_client()
 
-        # Get systems
-        systems = get_systems(myuplink)
-
+        systems = await get_systems(myuplink)
         if systems is None:
             return False
 
@@ -148,14 +136,15 @@ async def display_enum_parameters():
             for device in system["devices"]:
                 device_id = device["id"]
 
-                # Get detailed device information
-                device_data = get_device_details(myuplink, device_id)
+                device_data = await get_device_details(myuplink, device_id)
                 if device_data is None:
                     logger.info(f"Could not retrieve device details for {device_id}")
                     continue
 
                 device_name = device_data["product"]["name"]
-                device_enum_count = process_device_enum_parameters(myuplink, device_id, device_name)
+                device_enum_count = await process_device_enum_parameters(
+                    myuplink, device_id, device_name
+                )
                 enum_count += device_enum_count
 
             logger.info("")
@@ -167,6 +156,9 @@ async def display_enum_parameters():
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"Enum parameters display failed: {e}")
         return False
+    finally:
+        if session:
+            await session.close()
 
 
 async def main():
@@ -191,7 +183,6 @@ async def main():
     logger.info("✓ OAuth prerequisites met")
     logger.info("")
 
-    # Display enum parameters
     logger.info("Retrieving and displaying enum parameters...")
     logger.info("")
     success = await display_enum_parameters()

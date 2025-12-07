@@ -5,13 +5,13 @@ and myUplink API operations using mock data and sessions.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     format_parameter_value,
     get_device_brands,
     get_device_details,
@@ -256,42 +256,65 @@ class TestCheckOauthPrerequisites:
 # ============================================================================
 
 
-class TestCreateOauthSession:
-    """Test suite for create_oauth_session function."""
+class TestCreateApiClient:
+    """Test suite for create_api_client function."""
 
-    def test_create_oauth_session_success(self, patch_config_paths):
-        """Test successful OAuth session creation.
+    @pytest.mark.asyncio
+    async def test_create_api_client_success(self):
+        """Test successful API client creation returns session, api, and token manager."""
 
-        Args:
-            patch_config_paths: Config path patching fixture.
-        """
-        with patch("myuplink2mqtt.utils.myuplink_utils.OAuth2Session") as mock_oauth2:
-            session = create_oauth_session()
+        mock_session = AsyncMock()
+        mock_token_manager = MagicMock()
+        mock_api = MagicMock()
 
-        assert session is not None
-        mock_oauth2.assert_called_once()
+        with patch(
+            "myuplink2mqtt.utils.myuplink_utils.load_config",
+            return_value=("client", "secret"),
+        ), patch(
+            "myuplink2mqtt.utils.myuplink_utils.load_oauth_token",
+            return_value={"access_token": "token"},
+        ), patch(
+            "myuplink2mqtt.utils.myuplink_utils.aiohttp.ClientSession",
+            return_value=mock_session,
+        ), patch(
+            "myuplink2mqtt.utils.myuplink_utils.MyUplinkTokenManager",
+            return_value=mock_token_manager,
+        ) as tm_cls, patch(
+            "myuplink2mqtt.utils.myuplink_utils.Auth",
+        ) as auth_cls, patch(
+            "myuplink2mqtt.utils.myuplink_utils.MyUplinkAPI",
+            return_value=mock_api,
+        ) as api_cls:
+            session, api, token_manager = await create_api_client()
 
-    def test_create_oauth_session_missing_credentials(self):
-        """Test OAuth session creation fails without credentials."""
+        assert session is mock_session
+        assert api is mock_api
+        assert token_manager is mock_token_manager
+        tm_cls.assert_called_once()
+        auth_cls.assert_called_once()
+        api_cls.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_api_client_missing_credentials(self):
+        """Test create_api_client raises when credentials are unavailable."""
+
         with patch("myuplink2mqtt.utils.myuplink_utils.load_config", return_value=(None, None)):
             with pytest.raises(ValueError):
-                create_oauth_session()
+                await create_api_client()
 
-    def test_create_oauth_session_missing_token(self, tmp_path, mock_config):
-        """Test OAuth session creation fails without token file.
+    @pytest.mark.asyncio
+    async def test_create_api_client_missing_token_file(self):
+        """Test create_api_client surfaces token file errors."""
 
-        Args:
-            tmp_path: pytest temporary directory.
-            mock_config: Mock config data fixture.
-        """
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(mock_config))
-
-        with patch("myuplink2mqtt.utils.myuplink_utils.CONFIG_FILENAME", str(config_file)), patch(
-            "myuplink2mqtt.utils.myuplink_utils.TOKEN_FILENAME", "/nonexistent/token.json"
+        with patch(
+            "myuplink2mqtt.utils.myuplink_utils.load_config",
+            return_value=("client", "secret"),
+        ), patch(
+            "myuplink2mqtt.utils.myuplink_utils.load_oauth_token",
+            side_effect=FileNotFoundError("missing"),
         ):
             with pytest.raises(FileNotFoundError):
-                create_oauth_session()
+                await create_api_client()
 
 
 # ============================================================================
@@ -302,48 +325,43 @@ class TestCreateOauthSession:
 class TestGetSystems:
     """Test suite for get_systems function."""
 
-    def test_get_systems_success(self, mock_oauth_session, mock_systems_response):
-        """Test successful systems retrieval.
+    @pytest.mark.asyncio
+    async def test_get_systems_success(self, mock_api, mock_systems_response):
+        """Test successful systems retrieval."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-            mock_systems_response: Mock systems response fixture.
-        """
-        systems = get_systems(mock_oauth_session)
+        systems = await get_systems(mock_api)
 
         assert systems is not None
-        assert len(systems) == 2
+        assert len(systems) == len(mock_systems_response)
         assert systems[0]["name"] == "My Home System"
         assert systems[1]["name"] == "Cabin System"
 
-    def test_get_systems_returns_devices(self, mock_oauth_session):
-        """Test that systems include device information.
+    @pytest.mark.asyncio
+    async def test_get_systems_returns_devices(self, mock_api):
+        """Test that systems include device information."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-        """
-        systems = get_systems(mock_oauth_session)
+        systems = await get_systems(mock_api)
 
         assert systems[0]["devices"] is not None
         assert len(systems[0]["devices"]) == 2
         assert systems[0]["devices"][0]["id"] == "device-001"
 
-    def test_get_systems_api_error(self, mock_oauth_session_with_errors):
-        """Test systems retrieval handles API errors.
+    @pytest.mark.asyncio
+    async def test_get_systems_api_error(self, mock_api_with_errors):
+        """Test systems retrieval handles API errors."""
 
-        Args:
-            mock_oauth_session_with_errors: Mock session with errors fixture.
-        """
-        systems = get_systems(mock_oauth_session_with_errors)
+        systems = await get_systems(mock_api_with_errors)
 
         assert systems is None
 
-    def test_get_systems_handles_exception(self):
+    @pytest.mark.asyncio
+    async def test_get_systems_handles_exception(self):
         """Test systems retrieval handles exceptions."""
-        mock_session = MagicMock()
-        mock_session.get.side_effect = ValueError("Connection error")
 
-        systems = get_systems(mock_session)
+        mock_api = AsyncMock()
+        mock_api.async_get_systems.side_effect = ValueError("Connection error")
+
+        systems = await get_systems(mock_api)
 
         assert systems is None
 
@@ -356,48 +374,42 @@ class TestGetSystems:
 class TestGetDeviceDetails:
     """Test suite for get_device_details function."""
 
-    def test_get_device_details_nibe(self, mock_oauth_session, mock_device_details_nibe):
-        """Test retrieving Nibe device details.
+    @pytest.mark.asyncio
+    async def test_get_device_details_nibe(self, mock_api, mock_device_details_nibe):
+        """Test retrieving Nibe device details."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-            mock_device_details_nibe: Mock Nibe device details fixture.
-        """
-        details = get_device_details(mock_oauth_session, "device-001")
+        details = await get_device_details(mock_api, "device-001")
 
         assert details is not None
         assert details["product"]["name"] == "Nibe F1155"
         assert details["product"]["brand"] == "Nibe"
 
-    def test_get_device_details_ivt(self, mock_oauth_session, mock_device_details_ivt):
-        """Test retrieving IVT device details.
+    @pytest.mark.asyncio
+    async def test_get_device_details_ivt(self, mock_api, mock_device_details_ivt):
+        """Test retrieving IVT device details."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-            mock_device_details_ivt: Mock IVT device details fixture.
-        """
-        details = get_device_details(mock_oauth_session, "device-002")
+        details = await get_device_details(mock_api, "device-002")
 
         assert details is not None
         assert details["product"]["name"] == "IVT GEO 6"
         assert details["product"]["brand"] == "IVT"
 
-    def test_get_device_details_api_error(self, mock_oauth_session_with_errors):
-        """Test device details retrieval handles API errors.
+    @pytest.mark.asyncio
+    async def test_get_device_details_api_error(self, mock_api_with_errors):
+        """Test device details retrieval handles API errors."""
 
-        Args:
-            mock_oauth_session_with_errors: Mock session with errors fixture.
-        """
-        details = get_device_details(mock_oauth_session_with_errors, "device-001")
+        details = await get_device_details(mock_api_with_errors, "device-001")
 
         assert details is None
 
-    def test_get_device_details_handles_exception(self):
+    @pytest.mark.asyncio
+    async def test_get_device_details_handles_exception(self):
         """Test device details retrieval handles exceptions."""
-        mock_session = MagicMock()
-        mock_session.get.side_effect = OSError("Connection error")
 
-        details = get_device_details(mock_session, "device-001")
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = OSError("Connection error")
+
+        details = await get_device_details(mock_api, "device-001")
 
         assert details is None
 
@@ -410,55 +422,48 @@ class TestGetDeviceDetails:
 class TestGetDevicePoints:
     """Test suite for get_device_points function."""
 
-    def test_get_device_points_all(self, mock_oauth_session, mock_device_points_response):
-        """Test retrieving all device points.
+    @pytest.mark.asyncio
+    async def test_get_device_points_all(self, mock_api, mock_device_points_response):
+        """Test retrieving all device points."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-            mock_device_points_response: Mock points response fixture.
-        """
-        points = get_device_points(mock_oauth_session, "device-001")
+        points = await get_device_points(mock_api, "device-001")
 
         assert points is not None
-        assert len(points["points"]) == 5
+        assert len(points) == len(mock_device_points_response["points"])
 
-    def test_get_device_points_specific_parameters(self, mock_oauth_session):
-        """Test retrieving specific device points by parameter ID.
+    @pytest.mark.asyncio
+    async def test_get_device_points_specific_parameters(self, mock_api):
+        """Test retrieving specific device points by parameter ID."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-        """
         parameters = ["40004", "40012"]
-        points = get_device_points(mock_oauth_session, "device-001", parameters=parameters)
+        points = await get_device_points(mock_api, "device-001", parameters=parameters)
 
         assert points is not None
 
-    def test_get_device_points_with_language(self, mock_oauth_session):
-        """Test retrieving device points with specific language.
+    @pytest.mark.asyncio
+    async def test_get_device_points_with_language(self, mock_api):
+        """Test retrieving device points with specific language."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-        """
-        points = get_device_points(mock_oauth_session, "device-001", language="sv-SE")
+        points = await get_device_points(mock_api, "device-001", language="sv-SE")
 
         assert points is not None
 
-    def test_get_device_points_api_error(self, mock_oauth_session_with_errors):
-        """Test device points retrieval handles API errors.
+    @pytest.mark.asyncio
+    async def test_get_device_points_api_error(self, mock_api_with_errors):
+        """Test device points retrieval handles API errors."""
 
-        Args:
-            mock_oauth_session_with_errors: Mock session with errors fixture.
-        """
-        points = get_device_points(mock_oauth_session_with_errors, "device-001")
+        points = await get_device_points(mock_api_with_errors, "device-001")
 
         assert points is None
 
-    def test_get_device_points_handles_exception(self):
+    @pytest.mark.asyncio
+    async def test_get_device_points_handles_exception(self):
         """Test device points retrieval handles exceptions."""
-        mock_session = MagicMock()
-        mock_session.get.side_effect = KeyError("Invalid response format")
 
-        points = get_device_points(mock_session, "device-001")
+        mock_api = AsyncMock()
+        mock_api.async_get_device_points_json.side_effect = KeyError("Invalid response format")
+
+        points = await get_device_points(mock_api, "device-001")
 
         assert points is None
 
@@ -471,39 +476,36 @@ class TestGetDevicePoints:
 class TestGetDeviceBrands:
     """Test suite for get_device_brands function."""
 
-    def test_get_device_brands_multiple_devices(self, mock_oauth_session):
-        """Test retrieving brands for multiple devices.
+    @pytest.mark.asyncio
+    async def test_get_device_brands_multiple_devices(self, mock_api):
+        """Test retrieving brands for multiple devices."""
 
-        Args:
-            mock_oauth_session: Mock OAuth session fixture.
-        """
         devices = [{"id": "device-001"}, {"id": "device-002"}]
-        brands = get_device_brands(mock_oauth_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
         assert len(brands) == 2
         assert "Nibe" in brands[0]
         assert "IVT" in brands[1]
 
-    def test_get_device_brands_api_error_handling(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_api_error_handling(self, mock_api_with_errors):
         """Test device brands handles API errors gracefully."""
-        mock_session = MagicMock()
-        response = Mock()
-        response.status_code = 500
-        mock_session.get.return_value = response
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api_with_errors, devices)
 
         assert len(brands) == 1
-        assert "API error" in brands[0]
+        assert "error" in brands[0].lower()
 
-    def test_get_device_brands_exception_handling(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_exception_handling(self):
         """Test device brands handles exceptions gracefully."""
-        mock_session = MagicMock()
-        mock_session.get.side_effect = ValueError("Connection error")
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = ValueError("Connection error")
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
         assert len(brands) == 1
         assert "error" in brands[0].lower()
@@ -709,78 +711,68 @@ class TestGetParameterDisplayName:
 class TestGetDeviceBrandsExceptionHandling:
     """Test suite for exception handling in get_device_brands."""
 
-    def test_get_device_brands_keyerror_handling(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_keyerror_handling(self):
         """Test device brands handles KeyError from API response."""
-        mock_session = MagicMock()
-        response = Mock()
-        response.status_code = 200
-        response.json.return_value = {"invalid": "structure"}
-        mock_session.get.return_value = response
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = KeyError("missing product")
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
         assert len(brands) == 1
         assert "error" in brands[0].lower()
 
-    def test_get_device_brands_oserror_handling(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_oserror_handling(self):
         """Test device brands handles OSError."""
-        mock_session = MagicMock()
-        mock_session.get.side_effect = OSError("Connection refused")
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = OSError("Connection refused")
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
         assert len(brands) == 1
         assert "error" in brands[0].lower()
 
-    def test_get_device_brands_valueerror_handling(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_valueerror_handling(self):
         """Test device brands handles ValueError from device_data access."""
-        mock_session = MagicMock()
-        response = Mock()
-        response.status_code = 200
-        # This will trigger when trying to access device_data['product']['name']
-        response.json.return_value = {"invalid": "structure"}
-        mock_session.get.return_value = response
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = ValueError("bad data")
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
-        # Should catch KeyError and append error message
         assert len(brands) == 1
         assert "error" in brands[0].lower()
 
-    def test_get_device_brands_json_parse_error(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_json_parse_error(self):
         """Test device brands handles JSON parsing errors."""
-        mock_session = MagicMock()
-        response = Mock()
-        response.status_code = 200
-        response.json.side_effect = ValueError("Invalid JSON response")
-        mock_session.get.return_value = response
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.side_effect = ValueError("Invalid JSON response")
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
-        # Should catch ValueError and append error message
         assert len(brands) == 1
         assert "error" in brands[0].lower()
 
-    def test_get_device_brands_single_word_product(self):
+    @pytest.mark.asyncio
+    async def test_get_device_brands_single_word_product(self):
         """Test device brands with single-word product name."""
-        mock_session = MagicMock()
-        response = Mock()
-        response.status_code = 200
-        response.json.return_value = {
-            "product": {
-                "name": "SingleWord"  # No space in name
-            }
-        }
-        mock_session.get.return_value = response
+
+        mock_api = AsyncMock()
+        mock_api.async_get_device_json.return_value = {"product": {"name": "SingleWord"}}
 
         devices = [{"id": "device-001"}]
-        brands = get_device_brands(mock_session, devices)
+        brands = await get_device_brands(mock_api, devices)
 
-        # Should append single word product name as-is
         assert len(brands) == 1
         assert brands[0] == "SingleWord"
 
@@ -1048,4 +1040,3 @@ class TestAddAutoDiscoveryToPoints:
 
         # Auto discovery should still be added (might be None on error)
         assert "autoDiscovery" in points_data[0]
-

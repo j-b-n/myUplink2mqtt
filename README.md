@@ -441,25 +441,25 @@ The `demo/` folder contains practical examples for learning and testing:
 
 ```bash
 # Test API connectivity and OAuth authentication
-python demo/demo_ping.py
+python demo/myuplink_ping.py
 
 # Retrieve and display system and device names
-python demo/demo_get_names.py
+python demo/myuplink_get_names.py
 
 # Display device overview with key sensor readings
-python demo/demo_get_overview.py
+python demo/myuplink_get_overview.py
 
 # Retrieve all available device parameters
-python demo/demo_get_all_points.py
+python demo/myuplink_get_all_points.py
 
 # Retrieve specific device parameters
-python demo/demo_specific_points.py
+python demo/myuplink_specific_points.py
 
 # Test MQTT broker connectivity
-python demo/demo_mqtt.py
+python demo/mqtt_connect.py
 
 # List all MQTT topics and their current values
-python demo/demo_mqtt_list_topics.py
+python demo/mqtt_list_topics.py
 ```
 
 See [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for detailed information about each demo script.
@@ -724,13 +724,13 @@ myUplink2mqtt/
 │       └── auto_discovery_utils.py # Home Assistant auto-discovery
 │
 ├── demo/                          # Demo scripts for learning
-│   ├── demo_ping.py               # API connectivity test
-│   ├── demo_get_names.py          # Get system/device names
-│   ├── demo_get_overview.py       # Device overview data
-│   ├── demo_get_all_points.py     # All device parameters
-│   ├── demo_specific_points.py    # Specific parameters
-│   ├── demo_mqtt.py               # MQTT connectivity test
-│   └── demo_mqtt_list_topics.py   # List MQTT topics
+│   ├── myuplink_ping.py               # API connectivity test
+│   ├── myuplink_get_names.py          # Get system/device names
+│   ├── myuplink_get_overview.py       # Device overview data
+│   ├── myuplink_get_all_points.py     # All device parameters
+│   ├── myuplink_specific_points.py    # Specific parameters
+│   ├── mqtt_connect.py               # MQTT connectivity test
+│   └── mqtt_list_topics.py           # List MQTT topics
 │
 ├── tests/                         # Test suite (pytest)
 │   ├── __init__.py
@@ -805,14 +805,14 @@ myUplink2mqtt/
 1. Verify broker is running: `mosquitto -v` or `systemctl status mosquitto`
 2. Check broker host/port configuration (default: 10.0.0.2:1883)
 3. Verify authentication credentials if using auth
-4. Test connectivity: `python demo/demo_mqtt.py`
+4. Test connectivity: `python demo/mqtt_connect.py`
 
 **Error: No data appearing in Home Assistant**
 
 1. Check MQTT integration is enabled in Home Assistant
 2. Verify discovery prefix matches (default: `homeassistant`)
 3. Check MQTT broker logs for published messages
-4. Use `python demo/demo_mqtt_list_topics.py` to verify topics exist
+4. Use `python demo/mqtt_list_topics.py` to verify topics exist
 
 ### API Issues
 
@@ -820,7 +820,7 @@ myUplink2mqtt/
 
 1. Verify myUplink API credentials are correct
 2. Check that your account has devices associated
-3. Test API access: `python demo/demo_ping.py`
+3. Test API access: `python demo/myuplink_ping.py`
 4. Review API logs for authentication errors
 
 ### General Debugging
@@ -841,13 +841,13 @@ python -m myuplink2mqtt --show-config
 
 ```bash
 # Test OAuth and API
-python demo/demo_ping.py
+python demo/myuplink_ping.py
 
 # Test MQTT
-python demo/demo_mqtt.py
+python demo/mqtt_connect.py
 
 # Check what data is available
-python demo/demo_get_overview.py
+python demo/myuplink_get_overview.py
 ```
 
 ## 🤝 Contributing

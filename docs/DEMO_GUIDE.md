@@ -41,7 +41,7 @@ Before running any demo scripts, ensure:
 
 ## Demo Scripts
 
-### 1. demo_ping.py
+### 1. myuplink_ping.py
 
 **Purpose**: Test myUplink API connectivity and OAuth authentication
 
@@ -56,7 +56,7 @@ Before running any demo scripts, ensure:
 **Usage**:
 
 ```bash
-python demo/demo_ping.py
+python demo/myuplink_ping.py
 ```
 
 **Example output**:
@@ -81,7 +81,7 @@ Found 1 system(s):
 - Test network connectivity to myUplink API
 - Confirm that devices are accessible
 
-### 2. demo_get_names.py
+### 2. myuplink_get_names.py
 
 **Purpose**: Retrieve and display system and device names/information
 
@@ -95,7 +95,7 @@ Found 1 system(s):
 **Usage**:
 
 ```bash
-python demo/demo_names.py
+python demo/myuplink_get_names.py
 ```
 
 **Example output**:
@@ -114,7 +114,7 @@ System 1: "Heat Pump at Home"
 - Understand product models and manufacturers
 - Prepare device names for MQTT topic configuration
 
-### 3. demo_get_overview.py
+### 3. myuplink_get_overview.py
 
 **Purpose**: Display device overview with key sensor readings and status
 
@@ -132,7 +132,7 @@ System 1: "Heat Pump at Home"
 **Usage**:
 
 ```bash
-python demo/demo_get_overview.py
+python demo/myuplink_get_overview.py
 ```
 
 **Example output**:
@@ -155,7 +155,7 @@ Device: Basement Heat Pump (ID: abc123)
 - Identify which parameters are available on your devices
 - Create custom dashboards with specific parameters
 
-### 4. demo_get_all_points.py
+### 4. myuplink_get_all_points.py
 
 **Purpose**: Retrieve and display all available device parameters
 
@@ -169,7 +169,7 @@ Device: Basement Heat Pump (ID: abc123)
 **Usage**:
 
 ```bash
-python demo/demo_get_all_points.py
+python demo/myuplink_get_all_points.py
 ```
 
 **Example output**:
@@ -200,7 +200,7 @@ Parameter ID 40005: Supply Heating (BT2)
 - Create comprehensive sensor configurations
 - Document available data points
 
-### 5. demo_specific_points.py
+### 5. myuplink_specific_points.py
 
 **Purpose**: Retrieve specific device parameters by ID
 
@@ -214,7 +214,7 @@ Parameter ID 40005: Supply Heating (BT2)
 **Usage**:
 
 ```bash
-python demo/demo_specific_points.py
+python demo/myuplink_specific_points.py
 ```
 
 **Example output**:
@@ -241,7 +241,7 @@ Edit the demo script to specify your own parameter IDs:
 SPECIFIC_PARAMETERS = ["40004", "40005", "40013"]  # Modify this list
 ```
 
-### 6. demo_enum_parameters.py
+### 6. myuplink_enum_parameters.py
 
 **Purpose**: Display all parameters with enumerated (enum) values
 
@@ -255,7 +255,7 @@ SPECIFIC_PARAMETERS = ["40004", "40005", "40013"]  # Modify this list
 **Usage**:
 
 ```bash
-python demo/demo_enum_parameters.py
+python demo/myuplink_enum_parameters.py
 ```
 
 **Example output**:
@@ -293,7 +293,7 @@ Operating mode: Outdoor cntrl
 - Displays parameter category and ID for reference
 - Filters out numeric-only parameters (temperature, pressure, etc.)
 
-### 7. demo_mqtt.py
+### 7. mqtt_connect.py
 
 **Purpose**: Test MQTT broker connectivity
 
@@ -307,7 +307,7 @@ Operating mode: Outdoor cntrl
 **Usage**:
 
 ```bash
-python demo/demo_mqtt.py
+python demo/mqtt_connect.py
 ```
 
 **Configuration via environment variables**:
@@ -317,7 +317,7 @@ export MQTT_BROKER_HOST="10.0.0.2"
 export MQTT_BROKER_PORT="1883"
 export MQTT_USERNAME="your_username"      # Optional
 export MQTT_PASSWORD="your_password"      # Optional
-python demo/demo_mqtt.py
+python demo/mqtt_connect.py
 ```
 
 **Example output**:
@@ -339,7 +339,7 @@ Connecting...
 - Troubleshoot MQTT connection issues
 - Confirm network connectivity to broker
 
-### 8. demo_mqtt_list_topics.py
+### 8. mqtt_list_topics.py
 
 **Purpose**: List all current MQTT topics and their values
 
@@ -353,7 +353,7 @@ Connecting...
 **Usage**:
 
 ```bash
-python demo/demo_mqtt_list_topics.py
+python demo/mqtt_list_topics.py
 ```
 
 **Example output**:
@@ -379,7 +379,7 @@ Value: {"name": "Current Outdoor Temperature", ...}
 - Verify Home Assistant auto-discovery configuration
 - Monitor real-time sensor data
 
-### 9. demo_systems_me.py
+### 9. myuplink_systems_me.py
 
 **Purpose**: Retrieve and display raw system data from the API
 
@@ -393,7 +393,7 @@ Value: {"name": "Current Outdoor Temperature", ...}
 **Usage**:
 
 ```bash
-python demo/demo_systems_me.py
+python demo/myuplink_systems_me.py
 ```
 
 **Example output**:
@@ -425,7 +425,7 @@ python demo/demo_systems_me.py
 - Explore complete system metadata
 - Verify API credentials and access level
 
-### 10. demo_save.py
+### 10. myuplink_save_data.py
 
 **Purpose**: Save all API data to a JSON file
 
@@ -439,7 +439,7 @@ python demo/demo_systems_me.py
 **Usage**:
 
 ```bash
-python demo/demo_save.py
+python demo/myuplink_save_data.py
 ```
 
 **Example output**:
@@ -466,7 +466,7 @@ If you prefer not to activate the venv manually:
 ```bash
 # The Makefile automatically uses venv if available
 cd /path/to/myUplink2mqtt
-make demo-ping          # Run demo_ping.py
+make demo-ping          # Run myuplink_ping.py
 ```
 
 (Note: Makefile targets may vary - check your Makefile for available targets)
@@ -478,7 +478,7 @@ Most demo scripts support Python's logging configuration:
 ```bash
 # Run with debug output
 export LOGLEVEL=DEBUG
-python demo/demo_ping.py
+python demo/myuplink_ping.py
 ```
 
 ### Sequential Testing Workflow
@@ -488,36 +488,36 @@ Recommended order for testing a new setup:
 1. **Test API connectivity** - Verify OAuth is working
 
    ```bash
-   python demo/demo_ping.py
+   python demo/myuplink_ping.py
    ```
 
 2. **Check device names** - Understand your devices
 
    ```bash
-   python demo/demo_get_names.py
+   python demo/myuplink_get_names.py
    ```
 
 3. **View device overview** - See current sensor values
 
    ```bash
-   python demo/demo_get_overview.py
+   python demo/myuplink_get_overview.py
    ```
 
 4. **Explore all parameters** - Find available sensors
 
    ```bash
-   python demo/demo_get_all_points.py
+   python demo/myuplink_get_all_points.py
    ```
 
 5. **Test MQTT connection** - Verify broker connectivity
 
    ```bash
-   python demo/demo_mqtt.py
+   python demo/mqtt_connect.py
    ```
 
 6. **Monitor MQTT topics** - Watch data flow
    ```bash
-   python demo/demo_mqtt_list_topics.py
+   python demo/mqtt_list_topics.py
    ```
 
 ## Troubleshooting Demo Scripts
@@ -581,14 +581,14 @@ Recommended order for testing a new setup:
 
 You can modify demo scripts to suit your needs:
 
-### Change demo_specific_points.py to use your parameters
+### Change myuplink_specific_points.py to use your parameters
 
 ```python
 # Edit this section with your parameter IDs
 SPECIFIC_PARAMETERS = ["40004", "40005", "40013", "40040"]
 ```
 
-### Change MQTT broker in demo_mqtt.py
+### Change MQTT broker in mqtt_connect.py
 
 ```python
 # Edit these constants
@@ -596,7 +596,7 @@ MQTT_BROKER_HOST = "your-broker.com"
 MQTT_BROKER_PORT = 1883
 ```
 
-### Modify polling interval in demo_get_overview.py
+### Modify polling interval in myuplink_get_overview.py
 
 ```python
 # Edit the sleep duration

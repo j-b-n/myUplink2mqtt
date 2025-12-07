@@ -650,7 +650,7 @@ mosquitto_sub -h 127.0.0.1 -t "domoticz/#" -v
 ### 2. Run Demo Script
 
 ```bash
-python demo_domoticz_autodiscovery.py --host 127.0.0.1 --discovery-prefix domoticz
+python demo/domoticz_autodiscovery.py --host 127.0.0.1 --discovery-prefix domoticz
 ```
 
 ### 3. Check Domoticz Interface
@@ -703,32 +703,32 @@ After running the demo, you should see new devices appearing in:
 
 ## Demo Script Usage
 
-The `demo_domoticz_autodiscovery.py` script provides working examples for all component types:
+The `domoticz_autodiscovery.py` script provides working examples for all component types:
 
 ```bash
 # Basic usage (uses defaults)
-python demo/demo_domoticz_autodiscovery.py
+python demo/domoticz_autodiscovery.py
 
 # With custom MQTT broker
-python demo/demo_domoticz_autodiscovery.py \
+python demo/domoticz_autodiscovery.py \
   --host 192.168.1.100 \
   --port 1883
 
 # With authentication
-python demo/demo_domoticz_autodiscovery.py \
+python demo/domoticz_autodiscovery.py \
   --host 192.168.1.100 \
   --username mqtt_user \
   --password mqtt_pass
 
 # With custom discovery prefix
-python demo/demo_domoticz_autodiscovery.py \
+python demo/domoticz_autodiscovery.py \
   --discovery-prefix domoticz_custom
 
 # Debug mode
-python demo/demo_domoticz_autodiscovery.py --debug
+python demo/domoticz_autodiscovery.py --debug
 
 # Silent mode
-python demo/demo_domoticz_autodiscovery.py --silent
+python demo/domoticz_autodiscovery.py --silent
 ```
 
 The script creates one example entity for each supported component type and publishes representative initial state values. Monitor Domoticz to see the devices appear automatically.

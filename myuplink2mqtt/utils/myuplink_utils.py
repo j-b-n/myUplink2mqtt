@@ -9,12 +9,14 @@ import json
 import logging
 import os
 import re
+import time
 from json import dump, load
 from os import path
+from typing import Any, Dict, List, Optional, cast
 
 import aiohttp
-from myuplink import Auth, MyUplinkAPI
-from requests_oauthlib import OAuth2Session
+from myuplink.api import MyUplinkAPI
+from myuplink.auth import Auth
 
 from .auto_discovery_utils import (
     build_discovery_payload,
@@ -37,6 +39,111 @@ TOKEN_FILENAME = HOME_DIR + "/.myUplink_API_Token.json"
 
 # Config file for client credentials
 CONFIG_FILENAME = HOME_DIR + "/.myUplink_API_Config.json"
+
+
+class MyUplinkTokenManager:
+    """Asynchronous token manager compatible with myuplink.Auth.
+
+    This manager keeps the existing file-based token storage but performs
+    refreshes with aiohttp so it can be used directly by Auth/MyUplinkAPI.
+    """
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        client_id: str,
+        client_secret: str,
+        token_path: str = TOKEN_FILENAME,
+        token_url: str = f"{MYUPLINK_API_BASE}/oauth/token",
+        expiry_margin: int = 30,
+    ) -> None:
+        self.session = session
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_path = token_path
+        self.token_url = token_url
+        self.expiry_margin = expiry_margin
+        self.token_data: Dict[str, Any] = {}
+        self._load_existing_token()
+
+    def _load_existing_token(self) -> None:
+        """Load token data from disk if available."""
+        if not path.exists(self.token_path):
+            return
+
+        try:
+            with open(self.token_path, encoding="utf-8") as token_file:
+                self.token_data = json.load(token_file)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error(f"Could not load token file {self.token_path}: {exc}")
+            self.token_data = {}
+
+        self._ensure_expires_at()
+
+    def _ensure_expires_at(self) -> None:
+        """Ensure expires_at is present on the token payload."""
+        if not self.token_data:
+            return
+
+        expires_at = self.token_data.get("expires_at")
+        expires_in = self.token_data.get("expires_in")
+
+        if expires_at is None and expires_in is not None:
+            self.token_data["expires_at"] = time.time() + float(expires_in)
+
+    @property
+    def access_token(self) -> str:
+        """Return the current access token value."""
+        return self.token_data.get("access_token", "")
+
+    @property
+    def refresh_token(self) -> Optional[str]:
+        """Return the refresh token if present."""
+        return self.token_data.get("refresh_token")
+
+    def is_token_valid(self) -> bool:
+        """Determine whether the cached token is still valid."""
+        if not self.token_data:
+            return False
+
+        expires_at = self.token_data.get("expires_at")
+        if expires_at is None:
+            return False
+
+        return expires_at - time.time() > self.expiry_margin
+
+    async def fetch_access_token(self) -> None:
+        """Refresh the access token using the stored refresh token."""
+        if not self.refresh_token:
+            raise ValueError("Refresh token not available. Cannot refresh access token.")
+
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+
+        async with self.session.post(self.token_url, data=payload) as response:
+            if response.status != HTTP_STATUS_OK:
+                body = await response.text()
+                raise ValueError(f"Token refresh failed: {response.status} {body}")
+
+            refreshed = await response.json()
+
+        refreshed["expires_at"] = time.time() + float(refreshed.get("expires_in", 0))
+        self.token_data = refreshed
+
+    async def save_access_token(self) -> None:
+        """Persist the token to disk."""
+        if not self.token_data:
+            return
+
+        try:
+            with open(self.token_path, "w", encoding="utf-8") as token_file:
+                json.dump(self.token_data, token_file, indent=2, ensure_ascii=False)
+        except OSError as exc:
+            logger.error(f"Failed to save token file {self.token_path}: {exc}")
 
 
 def token_saver(token):
@@ -157,11 +264,11 @@ def load_oauth_token():
     return token
 
 
-def create_oauth_session():
-    """Create OAuth2Session with token refresh capability.
+async def create_api_client():
+    """Create an authenticated MyUplinkAPI client using aiohttp.
 
     Returns:
-        OAuth2Session: An OAuth2 session object configured for myUplink API.
+        tuple: (aiohttp.ClientSession, MyUplinkAPI, MyUplinkTokenManager)
 
     Raises:
         FileNotFoundError: If token file is not found.
@@ -174,53 +281,25 @@ def create_oauth_session():
     if not client_id or not client_secret:
         raise ValueError("Client credentials not found. Cannot create OAuth session.")
 
-    token = load_oauth_token()
-    token_url = f"{MYUPLINK_API_BASE}/oauth/token"
+    _ = load_oauth_token()
 
-    # Specify the list of extra arguments to include when refreshing a Token
-    extra_args = {"client_id": client_id, "client_secret": client_secret}
+    session = aiohttp.ClientSession()
+    token_manager = MyUplinkTokenManager(session, client_id, client_secret)
+    auth = Auth(session, MYUPLINK_API_BASE, token_manager)
+    api = MyUplinkAPI(auth)
 
-    # Instantiate an OAuth2Session object that will automatically refresh tokens
-    myuplink = OAuth2Session(
-        client_id=client_id,
-        token=token,
-        auto_refresh_url=token_url,
-        auto_refresh_kwargs=extra_args,
-        token_updater=token_saver,
-    )
-
-    return myuplink
+    return session, api, token_manager
 
 
-def get_device_brands(myuplink, devices):
-    """Get brand information for a list of devices.
-
-    Extracts manufacturer and model information from device product data.
-
-    Args:
-        myuplink (OAuth2Session): Authenticated OAuth2 session.
-        devices (list): List of device info dictionaries from API response.
-
-    Returns:
-        list: List of brand strings (e.g., ["Nibe F1155", "IVT GEO"]).
-
-    """
+async def get_device_brands(api: MyUplinkAPI, devices: List[dict]):
+    """Get brand information for a list of devices using MyUplinkAPI."""
     brands = []
     for device_info in devices:
         device_id = device_info["id"]
         try:
-            # Get detailed device information
-            device_response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/devices/{device_id}")
-            if device_response.status_code != HTTP_STATUS_OK:
-                brands.append(f"Device {device_id} (API error)")
-                continue
-
-            device_data = device_response.json()
+            device_data = await api.async_get_device_json(device_id)
             product_name = device_data["product"]["name"]
 
-            # Extract manufacturer from product name (simple approach)
-            # Most myUplink devices follow patterns like "Nibe F1155"
-            # or "Jäspi Tehowatti Air"
             if " " in product_name:
                 parts = product_name.split(" ", 1)
                 manufacturer = parts[0]
@@ -229,8 +308,8 @@ def get_device_brands(myuplink, devices):
             else:
                 brands.append(product_name)
 
-        except (OSError, ValueError, KeyError) as e:
-            brands.append(f"Device {device_id} (error: {e!s})")
+        except (OSError, ValueError, KeyError) as exc:
+            brands.append(f"Device {device_id} (error: {exc!s})")
 
     return brands
 
@@ -264,93 +343,47 @@ def get_manufacturer(device_details):
         return "Unknown"
 
 
-def get_systems(myuplink):
-    """Retrieve systems assigned to the authorized user.
-
-    Args:
-        myuplink (OAuth2Session): Authenticated OAuth2 session.
-
-    Returns:
-        list: List of system dictionaries or None if request failed.
-
-    """
+async def get_systems(api: MyUplinkAPI) -> Optional[List[dict]]:
+    """Retrieve systems assigned to the authorized user."""
     try:
-        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/systems/me")
-
-        if response.status_code != HTTP_STATUS_OK:
-            logger.error(f"Failed to get systems. HTTP Status: {response.status_code}")
-            logger.error(response.text)
-            return None
-
-        data = response.json()
-        return data.get("systems", [])
-
-    except (OSError, ValueError, KeyError) as e:
-        logger.error(f"Error retrieving systems: {e}")
+        systems = await api.async_get_systems()
+        return [system.raw for system in systems]
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error(f"Error retrieving systems: {exc}")
         return None
 
 
-def get_device_details(myuplink, device_id):
-    """Retrieve detailed information for a specific device.
-
-    Args:
-        myuplink (OAuth2Session): Authenticated OAuth2 session.
-        device_id (str): The device ID.
-
-    Returns:
-        dict: Device details dictionary or None if request failed.
-
-    """
+async def get_device_details(api: MyUplinkAPI, device_id: str) -> Optional[dict]:
+    """Retrieve detailed information for a specific device."""
     try:
-        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/devices/{device_id}")
-
-        if response.status_code != HTTP_STATUS_OK:
-            logger.error(f"Failed to get device details. HTTP Status: {response.status_code}")
-            return None
-
-        return response.json()
-
-    except (OSError, ValueError, KeyError) as e:
-        logger.error(f"Error retrieving device details for {device_id}: {e}")
+        return await api.async_get_device_json(device_id)
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error(f"Error retrieving device details for {device_id}: {exc}")
         return None
 
 
-def get_device_points(myuplink, device_id, parameters=None, language="en-US"):
-    """Retrieve data points for a specific device.
-
-    Args:
-        myuplink (OAuth2Session): Authenticated OAuth2 session.
-        device_id (str): The device ID.
-        parameters (list, optional): List of specific parameter IDs to retrieve.
-                                    If None, retrieves all available points.
-        language (str): Language code for parameter labels (default: 'en-US').
-
-    Returns:
-        list: List of point dictionaries or None if request failed.
-
-    """
+async def get_device_points(
+    api: MyUplinkAPI,
+    device_id: str,
+    parameters: Optional[List[str]] = None,
+    language: str = "en-US",
+) -> Optional[List[dict]]:
+    """Retrieve data points for a specific device."""
     try:
-        url = f"{MYUPLINK_API_BASE}/v2/devices/{device_id}/points"
+        result = await api.async_get_device_points_json(
+            device_id, language=language, points=parameters if parameters else None
+        )
 
-        query_params = []
-        if parameters:
-            query_params.append(f"parameters={','.join(parameters)}")
-        if language:
-            query_params.append(f"language={language}")
-
-        if query_params:
-            url += "?" + "&".join(query_params)
-
-        response = myuplink.get(url)
-
-        if response.status_code != HTTP_STATUS_OK:
-            logger.error(f"Failed to get device points. HTTP Status: {response.status_code}")
+        if result is None:
             return None
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict):
+            return [result]
 
-        return response.json()
-
-    except (OSError, ValueError, KeyError) as e:
-        logger.error(f"Error retrieving device points for {device_id}: {e}")
+        return cast(Optional[List[dict]], result)
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error(f"Error retrieving device points for {device_id}: {exc}")
         return None
 
 
@@ -545,31 +578,17 @@ def add_auto_discovery_to_points(points_data, device_info, system_id):
             point["autoDiscovery"] = None
 
 
-def save_api_data_to_file(myuplink, filename):
-    """Save all myUplink API data to a JSON file.
-
-    Retrieves all systems, devices, and data points from the myUplink API
-    and saves them to a JSON file in a structured format.
-
-    Args:
-        myuplink: OAuth2Session for myUplink API.
-        filename (str): Path to the output JSON file.
-
-    Returns:
-        bool: True if successful, False otherwise.
-
-    """
+async def save_api_data_to_file(api: MyUplinkAPI, filename: str) -> bool:
+    """Save all myUplink API data to a JSON file using MyUplinkAPI."""
     logger.info("Retrieving all data from myUplink API...")
 
-    # Get all systems
-    systems = get_systems(myuplink)
+    systems = await get_systems(api)
     if systems is None:
         logger.error("Failed to retrieve systems")
         return False
 
     logger.info(f"Retrieved {len(systems)} system(s)")
 
-    # Build complete data structure
     data = {"systems": []}
 
     for system in systems:
@@ -583,33 +602,27 @@ def save_api_data_to_file(myuplink, filename):
             "devices": [],
         }
 
-        # Process each device in the system
         for device in system["devices"]:
             device_id = device["id"]
 
-            # Get device details
-            device_details = get_device_details(myuplink, device_id)
+            device_details = await get_device_details(api, device_id)
             if device_details is None:
                 logger.warning(f"Could not retrieve device details for {device_id}")
                 continue
 
             logger.info(f"Processing device: {device_details['product']['name']} ({device_id})")
 
-            # Get all data points
-            points_data = get_device_points(myuplink, device_id)
+            points_data = await get_device_points(api, device_id)
             if points_data is None:
                 logger.warning(f"Could not retrieve data points for {device_id}")
                 continue
 
             logger.info(f"Retrieved {len(points_data)} data points")
 
-            # Clean parameter names in all data points
             for point in points_data:
                 if "parameterName" in point:
                     point["parameterName"] = clean_parameter_name(point["parameterName"])
 
-            # Generate auto discovery information for each data point
-            # Prepare device info for discovery payload
             device_info = {
                 "id": device_id,
                 "name": device_details.get("product", {}).get("name", "Unknown"),
@@ -620,10 +633,8 @@ def save_api_data_to_file(myuplink, filename):
                 "serial": device_details.get("serialNumber", ""),
             }
 
-            # Add auto discovery payloads to each data point
             add_auto_discovery_to_points(points_data, device_info, system_id)
 
-            # Build device data structure
             device_data = {
                 "id": device_id,
                 "product": device_details.get("product", {}),
@@ -637,12 +648,11 @@ def save_api_data_to_file(myuplink, filename):
 
         data["systems"].append(system_data)
 
-    # Save to file
     try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        with open(filename, "w", encoding="utf-8") as output_file:
+            json.dump(data, output_file, indent=2, ensure_ascii=False)
         logger.info(f"Successfully saved API data to {filename}")
         return True
-    except OSError as e:
-        logger.error(f"Failed to write to file {filename}: {e}")
+    except OSError as exc:
+        logger.error(f"Failed to write to file {filename}: {exc}")
         return False

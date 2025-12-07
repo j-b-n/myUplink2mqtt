@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     get_device_brands,
     get_systems,
     test_api_availability,
@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 async def test_oauth_and_get_systems():
-    """Test OAuth authentication and retrieve systems using requests_oauthlib."""
-    try:
-        # Create OAuth session
-        myuplink = create_oauth_session()
+    """Test OAuth authentication and retrieve systems using async MyUplinkAPI."""
 
-        # Get systems
-        systems = get_systems(myuplink)
+    session = None
+    try:
+        session, api, _token_manager = await create_api_client()
+
+        systems = await get_systems(api)
 
         if systems is None:
             return False
@@ -37,19 +37,13 @@ async def test_oauth_and_get_systems():
 
         for system in systems:
             logger.info(f"System ID: {system['systemId']}")
-
             logger.info(f"System Name: {system['name']}")
-
-            logger.info(f"Has Alarm: {system['hasAlarm']}")
-
-            logger.info(f"Security Level: {system['securityLevel']}")
-
-            logger.info(f"Country: {system['country']}")
-
+            logger.info(f"Has Alarm: {system.get('hasAlarm')}")
+            logger.info(f"Security Level: {system.get('securityLevel')}")
+            logger.info(f"Country: {system.get('country')}")
             logger.info(f"Number of devices: {len(system['devices'])}")
 
-            # Get device details to show brand information
-            brands = get_device_brands(myuplink, system["devices"])
+            brands = await get_device_brands(api, system["devices"])
 
             if brands:
                 logger.info(f"Device Brands: {', '.join(brands)}")
@@ -61,6 +55,9 @@ async def test_oauth_and_get_systems():
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"OAuth test failed: {e}")
         return False
+    finally:
+        if session:
+            await session.close()
 
 
 async def main():

@@ -24,7 +24,7 @@ from myuplink2mqtt.utils.auto_discovery_utils import (
 # Import utilities from the modules
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     get_device_details,
     get_device_points,
     get_parameter_display_name,
@@ -475,21 +475,9 @@ def process_data_points(mqtt_client, device_info, system_id, points_data, send_d
     return points_published, discovery_sent
 
 
-def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=False):
-    """Process a single device: retrieve data and publish to MQTT.
-
-    Args:
-        myuplink: OAuth2Session for myUplink API.
-        mqtt_client: MQTT client instance or None if not publishing.
-        system_id (str): System ID.
-        device_id (str): Device ID.
-        send_discovery (bool): Whether to send HA discovery messages (first cycle only).
-
-    Returns:
-        bool: True if successful, False otherwise.
-
-    """
-    device_data = get_device_details(myuplink, device_id)
+async def process_device(api, mqtt_client, system_id, device_id, send_discovery=False):
+    """Process a single device: retrieve data and publish to MQTT."""
+    device_data = await get_device_details(api, device_id)
     if device_data is None:
         logger.error(f"Could not retrieve device details for {device_id}")
         return False
@@ -508,7 +496,7 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
     }
     logger.debug(f"Processing device: {device_name} ({device_id})")
 
-    points_data = get_device_points(myuplink, device_id)
+    points_data = await get_device_points(api, device_id)
     if points_data is None:
         logger.error(f"Could not retrieve data points for {device_id}")
         return False
@@ -587,33 +575,25 @@ def show_configuration():
         logger.info(line)
 
 
-def setup_oauth_session():
-    """Set up OAuth session with prerequisites check.
-
-    Returns:
-        OAuth2Session or None: OAuth session if successful, None otherwise.
-
-    """
-    # Check OAuth prerequisites
+async def setup_api_client():
+    """Set up MyUplinkAPI client with prerequisites check."""
     logger.info("Checking OAuth prerequisites...")
     can_proceed, error_msg = check_oauth_prerequisites()
 
     if not can_proceed:
         logger.error("OAuth prerequisites not met:")
         logger.error(error_msg)
-        return None
+        return None, None, None
 
     logger.info("OAuth prerequisites met")
 
-    # Create OAuth session
-    logger.info("Creating OAuth session...")
     try:
-        myuplink = create_oauth_session()
-        logger.info("OAuth session created")
-        return myuplink
-    except (OSError, ValueError, KeyError) as e:
-        logger.error(f"Failed to create OAuth session: {e}")
-        return None
+        session, api, token_manager = await create_api_client()
+        logger.info("MyUplink API client created")
+        return session, api, token_manager
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error(f"Failed to create MyUplink API client: {exc}")
+        return None, None, None
 
 
 def connect_mqtt_broker():
@@ -648,42 +628,31 @@ def connect_mqtt_broker():
         return None
 
 
-def process_poll_cycle(myuplink, mqtt_client, loop_count):
-    """Process a single poll cycle.
-
-    Args:
-        myuplink: OAuth2Session for myUplink API.
-        mqtt_client: MQTT client instance.
-        loop_count (int): Current loop iteration number.
-
-    """
+async def process_poll_cycle(api, mqtt_client, loop_count):
+    """Process a single poll cycle."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     logger.debug(f"=== Poll cycle {loop_count} at {timestamp} ===")
 
-    # Send discovery messages only on first cycle (they are retained at broker)
     send_discovery = loop_count == 1
 
     if send_discovery and PUBLISH_TO_MQTT:
         logger.info("First cycle: Sending Home Assistant discovery messages (retained at broker)")
 
-    # Get systems
-    systems = get_systems(myuplink)
+    systems = await get_systems(api)
     if systems is None:
         logger.error("Failed to retrieve systems")
         return
     logger.debug(f"Retrieved {len(systems)} system(s)")
 
-    # Process each system
     for system in systems:
         system_id = system["systemId"]
         system_name = system["name"]
         logger.debug(f"System: {system_name} (ID: {system_id})")
         logger.debug(f"Devices: {len(system['devices'])}")
 
-        # Process each device
         for device in system["devices"]:
             device_id = device["id"]
-            process_device(myuplink, mqtt_client, system_id, device_id, send_discovery)
+            await process_device(api, mqtt_client, system_id, device_id, send_discovery)
 
 
 def log_startup_info():
@@ -705,46 +674,44 @@ def log_startup_info():
 
 async def main_loop():
     """Poll myUplink API and publish data to MQTT."""
-    # Set up OAuth session
-    myuplink = setup_oauth_session()
-    if myuplink is None:
+    session, api, _token_manager = await setup_api_client()
+    if api is None or session is None:
         return False
 
-    # Connect to MQTT broker (skip if debug mode without publishing)
     mqtt_client = None
     if PUBLISH_TO_MQTT:
         mqtt_client = connect_mqtt_broker()
         if mqtt_client is None:
+            await session.close()
             return False
 
-    # Log startup information
     log_startup_info()
 
     loop_count = 0
     try:
         while True:
             loop_count += 1
-            process_poll_cycle(myuplink, mqtt_client, loop_count)
+            await process_poll_cycle(api, mqtt_client, loop_count)
             logger.info(f"Poll cycle {loop_count} complete")
 
-            # Exit after first cycle if RUN_ONCE mode
             if RUN_ONCE:
                 logger.info("Single cycle complete, exiting")
                 break
 
             logger.debug(f"Sleeping for {POLL_INTERVAL} seconds...")
-            time.sleep(POLL_INTERVAL)
+            await asyncio.sleep(POLL_INTERVAL)
 
     except KeyboardInterrupt:
         logger.info("Shutdown requested by user (Ctrl+C)")
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error(f"Unexpected error in main loop: {e}")
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.error(f"Unexpected error in main loop: {exc}")
     finally:
-        if PUBLISH_TO_MQTT:
+        if PUBLISH_TO_MQTT and mqtt_client is not None:
             logger.info("Disconnecting from MQTT broker...")
             mqtt_client.loop_stop()
             mqtt_client.disconnect()
             logger.info("Disconnected")
+        await session.close()
 
     return True
 
@@ -792,21 +759,25 @@ def main():
         logger.info("=" * 70)
         logger.info("")
 
-        # Set up OAuth session
-        myuplink = setup_oauth_session()
-        if myuplink is None:
-            sys.exit(1)
+        async def run_save():
+            session, api, _token_manager = await setup_api_client()
+            if api is None or session is None:
+                return False
 
-        # Save data to file
-        logger.info(f"Saving all API data to: {args.save}")
-        success = save_api_data_to_file(myuplink, args.save)
+            try:
+                logger.info(f"Saving all API data to: {args.save}")
+                return await save_api_data_to_file(api, args.save)
+            finally:
+                await session.close()
+
+        success = asyncio.run(run_save())
 
         if success:
             logger.info("Data export completed successfully")
             sys.exit(0)
-        else:
-            logger.error("Data export failed")
-            sys.exit(1)
+
+        logger.error("Data export failed")
+        sys.exit(1)
 
     # Log banner (only shown if not silent mode)
     logger.info("=" * 70)
@@ -817,13 +788,8 @@ def main():
     logger.info("")
 
     # Run the async main loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        success = loop.run_until_complete(main_loop())
-        sys.exit(0 if success else 1)
-    finally:
-        loop.close()
+    success = asyncio.run(main_loop())
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

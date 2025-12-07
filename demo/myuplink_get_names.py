@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     get_device_details,
     get_manufacturer,
     get_systems,
@@ -22,12 +22,11 @@ logger = logging.getLogger(__name__)
 
 async def test_get_names():
     """Test retrieving and displaying system and device names."""
+    session = None
     try:
-        # Create OAuth session
-        myuplink = create_oauth_session()
+        session, api, _token_manager = await create_api_client()
 
-        # Get systems
-        systems = get_systems(myuplink)
+        systems = await get_systems(api)
 
         if systems is None:
             return False
@@ -49,7 +48,7 @@ async def test_get_names():
                 logger.info(f"  Device ID: {device_id}")
 
                 # Get detailed device information for product name
-                device_details = get_device_details(myuplink, device_id)
+                device_details = await get_device_details(api, device_id)
                 if device_details:
                     if "product" in device_details and "name" in device_details["product"]:
                         product_name = device_details["product"]["name"]
@@ -68,6 +67,9 @@ async def test_get_names():
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"Name retrieval test failed: {e}")
         return False
+    finally:
+        if session:
+            await session.close()
 
 
 async def main():

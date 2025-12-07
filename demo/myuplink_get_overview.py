@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     get_device_details,
     get_device_points,
     get_systems,
@@ -51,10 +51,10 @@ def format_parameter_value(point):
     return str(value)
 
 
-def display_device_overview(myuplink, device_id):  # noqa: C901
+async def display_device_overview(api, device_id):  # noqa: C901
     """Display overview information for a device."""
     # Get detailed device information
-    device_data = get_device_details(myuplink, device_id)
+    device_data = await get_device_details(api, device_id)
     if device_data is None:
         logger.info(f"Could not retrieve device details for {device_id}")
         return False
@@ -63,7 +63,7 @@ def display_device_overview(myuplink, device_id):  # noqa: C901
     logger.info("=" * 50)
 
     # First, get all available parameters to see what's actually available
-    all_points_data = get_device_points(myuplink, device_id)
+    all_points_data = await get_device_points(api, device_id)
 
     if all_points_data is None:
         logger.info(f"Could not retrieve data points for {device_id}")
@@ -152,12 +152,11 @@ def display_device_overview(myuplink, device_id):  # noqa: C901
 
 async def test_get_overview():
     """Test retrieving and displaying device overview information."""
+    session = None
     try:
-        # Create OAuth session
-        myuplink = create_oauth_session()
+        session, api, _token_manager = await create_api_client()
 
-        # Get systems
-        systems = get_systems(myuplink)
+        systems = await get_systems(api)
 
         if systems is None:
             return False
@@ -168,7 +167,7 @@ async def test_get_overview():
             logger.info(f"Devices: {len(system['devices'])}")
             for device in system["devices"]:
                 device_id = device["id"]
-                success = display_device_overview(myuplink, device_id)
+                success = await display_device_overview(api, device_id)
                 if not success:
                     logger.error(f"Failed to get overview for device {device_id}")
         return True
@@ -176,6 +175,9 @@ async def test_get_overview():
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"Overview test failed: {e}")
         return False
+    finally:
+        if session:
+            await session.close()
 
 
 async def main():

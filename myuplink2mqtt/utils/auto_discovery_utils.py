@@ -315,7 +315,7 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
         },
         "device": {
             "identifiers": [f"myuplink_{device_info['id']}"],
-            #"name": device_info["name"],
+            # "name": device_info["name"],
             "manufacturer": device_info["manufacturer"],
             "model": device_info["model"],
         },

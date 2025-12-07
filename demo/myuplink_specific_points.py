@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     get_device_details,
     get_device_points,
     get_systems,
@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 PARAMETERS = ["40004", "40940", "40005"]
 
 
-def process_device_points(myuplink, device_id):
+async def process_device_points(api, device_id):
     """Process and display specific data points for a device."""
     # Get detailed device information first
-    device_data = get_device_details(myuplink, device_id)
+    device_data = await get_device_details(api, device_id)
     if device_data is None:
         logger.info(f"Device {device_id}: Could not retrieve device details")
         return
@@ -40,7 +40,7 @@ def process_device_points(myuplink, device_id):
     logger.info(f"Device connectionState: {device_data.get('connectionState', 'Unknown')}")
 
     # Get specific data points for this device
-    points_data = get_device_points(myuplink, device_id, PARAMETERS)
+    points_data = await get_device_points(api, device_id, PARAMETERS)
 
     if points_data is None:
         logger.info(f"Device {device_id}: Could not retrieve data points")
@@ -57,12 +57,11 @@ def process_device_points(myuplink, device_id):
 
 async def test_specific_points():
     """Test OAuth authentication and retrieve specific data points from devices."""
+    session = None
     try:
-        # Create OAuth session
-        myuplink = create_oauth_session()
+        session, api, _token_manager = await create_api_client()
 
-        # Get systems
-        systems = get_systems(myuplink)
+        systems = await get_systems(api)
 
         if systems is None:
             return False
@@ -77,12 +76,15 @@ async def test_specific_points():
 
             for device_info in system["devices"]:
                 device_id = device_info["id"]
-                process_device_points(myuplink, device_id)
+                await process_device_points(api, device_id)
         return True
 
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"OAuth test failed: {e}")
         return False
+    finally:
+        if session:
+            await session.close()
 
 
 async def main():

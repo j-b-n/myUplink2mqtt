@@ -4,6 +4,7 @@ This script demonstrates how to use the save_api_data_to_file function
 to retrieve all data from the myUplink API and save it to a JSON file.
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from myuplink2mqtt.utils.myuplink_utils import (
     check_oauth_prerequisites,
-    create_oauth_session,
+    create_api_client,
     save_api_data_to_file,
 )
 
@@ -24,14 +25,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
+async def main():
     """Main demo function."""
+
     logger.info("=" * 70)
     logger.info("myUplink API Data Save Demo")
     logger.info("=" * 70)
     logger.info("")
 
-    # Check prerequisites
     logger.info("Checking OAuth prerequisites...")
     can_proceed, error_msg = check_oauth_prerequisites()
 
@@ -44,40 +45,45 @@ def main():
     logger.info("OAuth prerequisites met ✓")
     logger.info("")
 
-    # Create OAuth session
-    logger.info("Creating OAuth session...")
+    logger.info("Creating myUplink API client...")
+
+    session = None
     try:
-        myuplink = create_oauth_session()
-        logger.info("OAuth session created ✓")
-    except (OSError, ValueError, KeyError) as e:
-        logger.error(f"Failed to create OAuth session: {e}")
-        return False
+        session, myuplink, _token_manager = await create_api_client()
+        logger.info("API client created ✓")
 
-    logger.info("")
-
-    # Save data to file
-    output_file = "/tmp/myuplink_demo.json"
-    logger.info(f"Saving all API data to: {output_file}")
-    logger.info("This may take a moment...")
-    logger.info("")
-
-    success = save_api_data_to_file(myuplink, output_file)
-
-    if success:
         logger.info("")
-        logger.info("=" * 70)
-        logger.info("✓ Data export completed successfully")
-        logger.info(f"✓ Data saved to: {output_file}")
-        logger.info("=" * 70)
-        return True
-    else:
+
+        output_file = "/tmp/myuplink_demo.json"
+        logger.info(f"Saving all API data to: {output_file}")
+        logger.info("This may take a moment...")
+        logger.info("")
+
+        success = await save_api_data_to_file(myuplink, output_file)
+
+        if success:
+            logger.info("")
+            logger.info("=" * 70)
+            logger.info("✓ Data export completed successfully")
+            logger.info(f"✓ Data saved to: {output_file}")
+            logger.info("=" * 70)
+            return True
+
         logger.error("")
         logger.error("=" * 70)
         logger.error("✗ Data export failed")
         logger.error("=" * 70)
         return False
 
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error(f"Failed to create myUplink API client: {exc}")
+        return False
+
+    finally:
+        if session:
+            await session.close()
+
 
 if __name__ == "__main__":
-    success = main()
+    success = asyncio.run(main())
     sys.exit(0 if success else 1)

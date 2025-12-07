@@ -6,7 +6,8 @@ with realistic API responses and MQTT server behavior.
 
 import json
 import os
-from unittest.mock import MagicMock, Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -68,42 +69,40 @@ def mock_systems_response():
     """Return mock response for /v2/systems/me API endpoint.
 
     Returns:
-        dict: Mock systems data with devices.
+        list: Mock systems data with devices.
     """
-    return {
-        "systems": [
-            {
-                "systemId": "system-123",
-                "name": "My Home System",
-                "devices": [
-                    {
-                        "id": "device-001",
-                        "deviceType": "HEAT_PUMP",
-                        "connectionStatus": "ONLINE",
-                        "activationDate": "2023-01-15",
-                    },
-                    {
-                        "id": "device-002",
-                        "deviceType": "INDOOR_UNIT",
-                        "connectionStatus": "ONLINE",
-                        "activationDate": "2023-01-15",
-                    },
-                ],
-            },
-            {
-                "systemId": "system-456",
-                "name": "Cabin System",
-                "devices": [
-                    {
-                        "id": "device-003",
-                        "deviceType": "HEAT_PUMP",
-                        "connectionStatus": "OFFLINE",
-                        "activationDate": "2023-06-01",
-                    }
-                ],
-            },
-        ]
-    }
+    return [
+        {
+            "systemId": "system-123",
+            "name": "My Home System",
+            "devices": [
+                {
+                    "id": "device-001",
+                    "deviceType": "HEAT_PUMP",
+                    "connectionStatus": "ONLINE",
+                    "activationDate": "2023-01-15",
+                },
+                {
+                    "id": "device-002",
+                    "deviceType": "INDOOR_UNIT",
+                    "connectionStatus": "ONLINE",
+                    "activationDate": "2023-01-15",
+                },
+            ],
+        },
+        {
+            "systemId": "system-456",
+            "name": "Cabin System",
+            "devices": [
+                {
+                    "id": "device-003",
+                    "deviceType": "HEAT_PUMP",
+                    "connectionStatus": "OFFLINE",
+                    "activationDate": "2023-06-01",
+                }
+            ],
+        },
+    ]
 
 
 @pytest.fixture
@@ -222,78 +221,49 @@ def mock_device_points_with_label_cleanup():
     }
 
 
-# ============================================================================
-# Mock OAuth Session
-# ============================================================================
-
-
 @pytest.fixture
-def mock_oauth_session(
+def mock_api(
     mock_systems_response,
     mock_device_details_nibe,
     mock_device_details_ivt,
     mock_device_points_response,
 ):
-    """Return a mock OAuth2Session object.
+    """Return an AsyncMock MyUplinkAPI client with realistic side effects."""
 
-    Args:
-        mock_systems_response: Systems endpoint response fixture.
-        mock_device_details_nibe: Nibe device details fixture.
-        mock_device_details_ivt: IVT device details fixture.
-        mock_device_points_response: Device points response fixture.
+    api = AsyncMock()
+    api.async_get_systems.return_value = [
+        SimpleNamespace(raw=system) for system in mock_systems_response
+    ]
 
-    Returns:
-        Mock: Mock OAuth2Session configured with side effects.
-    """
-    mock_session = MagicMock()
+    async def get_device_json(device_id):
+        if device_id == "device-001":
+            return mock_device_details_nibe
+        if device_id == "device-002":
+            return mock_device_details_ivt
+        raise KeyError("Device not found")
 
-    def mock_get(url, *args, **kwargs):
-        """Mock GET requests based on URL patterns."""
-        response = Mock()
-        response.status_code = 200
+    async def get_device_points(device_id, language="en-US", points=None):
+        _ = language
+        _ = points
+        if device_id in {"device-001", "device-002"}:
+            return mock_device_points_response["points"]
+        raise KeyError("Device not found")
 
-        # Route based on URL
-        if "/v2/systems/me" in url:
-            response.json.return_value = mock_systems_response
-        elif "/v2/devices/device-001" in url and "/points" not in url:
-            response.json.return_value = mock_device_details_nibe
-        elif "/v2/devices/device-002" in url and "/points" not in url:
-            response.json.return_value = mock_device_details_ivt
-        elif "/v2/devices/device-001/points" in url:
-            response.json.return_value = mock_device_points_response
-        elif "/v2/devices/device-002/points" in url:
-            response.json.return_value = mock_device_points_response
-        elif "/v2/devices" in url and "/points" in url:
-            response.json.return_value = mock_device_points_response
-        else:
-            response.status_code = 404
-            response.json.return_value = {"error": "Not found"}
+    api.async_get_device_json.side_effect = get_device_json
+    api.async_get_device_points_json.side_effect = get_device_points
 
-        return response
-
-    mock_session.get.side_effect = mock_get
-    return mock_session
+    return api
 
 
 @pytest.fixture
-def mock_oauth_session_with_errors():
-    """Return a mock OAuth2Session that returns HTTP errors.
+def mock_api_with_errors():
+    """Return an AsyncMock MyUplinkAPI client that raises errors."""
 
-    Returns:
-        Mock: Mock OAuth2Session configured to return errors.
-    """
-    mock_session = MagicMock()
-
-    def mock_get_error(url, *args, **kwargs):
-        """Mock GET requests that return error responses."""
-        response = Mock()
-        response.status_code = 401
-        response.text = "Unauthorized"
-        response.json.return_value = {"error": "Invalid token"}
-        return response
-
-    mock_session.get.side_effect = mock_get_error
-    return mock_session
+    api = AsyncMock()
+    api.async_get_systems.side_effect = ValueError("Invalid token")
+    api.async_get_device_json.side_effect = ValueError("Device error")
+    api.async_get_device_points_json.side_effect = ValueError("Points error")
+    return api
 
 
 # ============================================================================
@@ -435,23 +405,6 @@ def patch_config_paths(tmp_path, mock_oauth_token, mock_config):
         "myuplink2mqtt.utils.myuplink_utils.TOKEN_FILENAME", token_path
     ):
         yield config_path, token_path
-
-
-@pytest.fixture
-def patch_oauth_creation(mock_oauth_session, patch_config_paths):
-    """Patch OAuth session creation to return mock session.
-
-    Args:
-        mock_oauth_session: Mock OAuth session fixture.
-        patch_config_paths: Configuration path patching fixture.
-
-    Yields:
-        Mock: The mock OAuth session being used.
-    """
-    with patch(
-        "myuplink2mqtt.utils.myuplink_utils.create_oauth_session", return_value=mock_oauth_session
-    ):
-        yield mock_oauth_session
 
 
 @pytest.fixture
