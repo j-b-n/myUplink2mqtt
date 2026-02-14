@@ -486,13 +486,13 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
         send_discovery (bool): Whether to send HA discovery messages (first cycle only).
 
     Returns:
-        bool: True if successful, False otherwise.
+        int: Number of entities (data points) published for this device.
 
     """
     device_data = get_device_details(myuplink, device_id)
     if device_data is None:
         logger.error(f"Could not retrieve device details for {device_id}")
-        return False
+        return 0
 
     device_name = device_data["product"]["name"]
     product_name = device_data["product"]["name"]
@@ -511,7 +511,7 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
     points_data = get_device_points(myuplink, device_id)
     if points_data is None:
         logger.error(f"Could not retrieve data points for {device_id}")
-        return False
+        return 0
     logger.debug(f"Retrieved {len(points_data)} data points")
 
     year, month, day, _year_point, _month_point, _day_point = extract_installation_date_values(
@@ -538,7 +538,7 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
         logger.debug(f"Published {points_published} state updates to MQTT")
     else:
         logger.debug(f"Would publish {points_published} data points (debug mode)")
-    return True
+    return points_published
 
 
 def show_configuration():
@@ -666,11 +666,13 @@ def process_poll_cycle(myuplink, mqtt_client, loop_count):
     if send_discovery and PUBLISH_TO_MQTT:
         logger.info("First cycle: Sending Home Assistant discovery messages (retained at broker)")
 
+    entities_published = 0
+
     # Get systems
     systems = get_systems(myuplink)
     if systems is None:
         logger.error("Failed to retrieve systems")
-        return
+        return entities_published
     logger.debug(f"Retrieved {len(systems)} system(s)")
 
     # Process each system
@@ -683,7 +685,11 @@ def process_poll_cycle(myuplink, mqtt_client, loop_count):
         # Process each device
         for device in system["devices"]:
             device_id = device["id"]
-            process_device(myuplink, mqtt_client, system_id, device_id, send_discovery)
+            entities_published += process_device(
+                myuplink, mqtt_client, system_id, device_id, send_discovery
+            )
+
+    return entities_published
 
 
 def log_startup_info():
@@ -724,8 +730,10 @@ async def main_loop():
     try:
         while True:
             loop_count += 1
-            process_poll_cycle(myuplink, mqtt_client, loop_count)
-            logger.info(f"Poll cycle {loop_count} complete")
+            entities_published = process_poll_cycle(myuplink, mqtt_client, loop_count)
+            logger.info(
+                f"Poll cycle {loop_count} complete (entities published: {entities_published})"
+            )
 
             # Exit after first cycle if RUN_ONCE mode
             if RUN_ONCE:
