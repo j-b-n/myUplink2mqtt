@@ -7,19 +7,26 @@ Follows the repository patterns for OAuth authentication and error handling.
 
 import argparse
 import asyncio
+import json
 import logging
+import math
 import os
 import socket
 import sys
 import time
+from typing import Any, Dict, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
 from myuplink2mqtt.utils.auto_discovery_utils import (
+    clean_enum_text,
     determine_entity_category,
     determine_value_type,
+    normalize_enum_value,
+    publish_cached_discovery,
     publish_ha_discovery,
+    publish_ha_entity_discovery,
 )
 
 # Import utilities from the modules
@@ -31,6 +38,7 @@ from myuplink2mqtt.utils.myuplink_utils import (
     get_parameter_display_name,
     get_systems,
     save_api_data_to_file,
+    set_device_point,
 )
 
 # Configure logging
@@ -51,6 +59,7 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))  # Default: 1 minute
 
 # MQTT client state
 MQTT_CONNECTED = False
+WRITABLE_POINTS = {}
 
 # Command line options (set by parse_arguments)
 SILENT_MODE = False
@@ -168,6 +177,13 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):  # pylint
     global MQTT_CONNECTED  # pylint: disable=global-statement
     if reason_code.value == 0:
         MQTT_CONNECTED = True
+        for topic in (
+            f"{MQTT_BASE_TOPIC}/+/+/+/set",
+            f"{HA_DISCOVERY_PREFIX}/status",
+        ):
+            result, _message_id = client.subscribe(topic, qos=1)
+            if isinstance(result, int) and result != 0:
+                logger.error("Failed to subscribe to MQTT topic %s (rc: %s)", topic, result)
         auth_msg = " (authenticated)" if MQTT_USERNAME else ""
         broker_info = f"{MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}"
         logger.info(f"Connected to MQTT broker at {broker_info}{auth_msg}")
@@ -177,6 +193,164 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):  # pylint
         logger.error(f"Failed MQTT connect to {broker_info}, rc: {reason_code.value}")
 
 
+def on_mqtt_message(client: Any, userdata: Any, message: Any) -> None:
+    """Handle Home Assistant birth messages and writable-point commands."""
+    if message.topic == f"{HA_DISCOVERY_PREFIX}/status":
+        _handle_home_assistant_status(client, message)
+        return
+
+    _handle_mqtt_write(userdata, message)
+
+
+def _handle_home_assistant_status(client: Any, message: Any) -> None:
+    """Replay discovery configurations after Home Assistant reports online."""
+    status = message.payload.decode("utf-8", errors="replace").strip().lower()
+    if status == "online":
+        logger.info("Home Assistant is online; republishing discovery configurations")
+        publish_cached_discovery(client)
+
+
+def _handle_mqtt_write(userdata: Any, message: Any) -> None:
+    """Validate and send one writable-point command."""
+    address = _get_command_address(message)
+    if address is None:
+        return
+
+    system_id, device_id, parameter_id = address
+    point = WRITABLE_POINTS.get((system_id, device_id, parameter_id))
+    if point is None or point.get("writable") is not True:
+        logger.error(
+            "Ignoring command for unknown or non-writable point %s on device %s",
+            parameter_id,
+            device_id,
+        )
+        return
+
+    try:
+        requested_value = message.payload.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        logger.error("Ignoring non-text command for point %s", parameter_id)
+        return
+
+    api_value = parse_write_command(point, requested_value)
+    if api_value is None:
+        logger.error(
+            "Rejected invalid command value for point %s on device %s: %r",
+            parameter_id,
+            device_id,
+            requested_value,
+        )
+        return
+
+    if userdata is None:
+        logger.error("Cannot write point %s: myUplink session is unavailable", parameter_id)
+        return
+
+    if set_device_point(userdata, device_id, parameter_id, api_value):
+        logger.info(
+            "Accepted MQTT command for point %s on device %s; next poll will publish state",
+            parameter_id,
+            device_id,
+        )
+
+
+def _get_command_address(message: Any) -> Optional[Tuple[str, str, str]]:
+    """Return system, device, and point IDs for a valid non-retained command."""
+    if message.retain:
+        logger.warning("Ignoring retained MQTT command on %s", message.topic)
+        return None
+
+    command_prefix = f"{MQTT_BASE_TOPIC}/"
+    if not message.topic.startswith(command_prefix):
+        return None
+
+    topic_parts = message.topic[len(command_prefix) :].split("/")
+    if len(topic_parts) != 4 or topic_parts[3] != "set":
+        logger.warning("Ignoring malformed MQTT command topic %s", message.topic)
+        return None
+    return topic_parts[0], topic_parts[1], topic_parts[2]
+
+
+def parse_write_command(point: Dict[str, Any], requested_value: str) -> Optional[str]:
+    """Validate an MQTT command and convert it to a myUplink API value."""
+    enum_values = point.get("enumValues") or []
+    if enum_values:
+        return _parse_enum_command(enum_values, requested_value)
+
+    current_value = point.get("value")
+    if _is_switch_point(point):
+        return _parse_switch_command(current_value, requested_value)
+
+    if isinstance(current_value, (int, float)) and not isinstance(current_value, bool):
+        return _parse_numeric_command(point, requested_value)
+
+    return requested_value
+
+
+def _parse_enum_command(enum_values: List[Dict[str, Any]], requested_value: str) -> Optional[str]:
+    """Resolve a displayed enum label to its REST API value."""
+    normalized_value = clean_enum_text(requested_value).casefold()
+    for item in enum_values:
+        label = clean_enum_text(str(item.get("text", "")))
+        enum_value = str(item.get("value", "")).strip()
+        if enum_value and (
+            normalized_value == label.casefold()
+            or normalize_enum_value(requested_value) == normalize_enum_value(enum_value)
+        ):
+            return enum_value
+    return None
+
+
+def _is_switch_point(point: Dict[str, Any]) -> bool:
+    """Determine whether a writable point is represented as a switch."""
+    value = point.get("value")
+    return isinstance(value, bool) or (
+        isinstance(value, (int, float)) and not point.get("parameterUnit") and value in (0, 1)
+    )
+
+
+def _parse_switch_command(current_value: Any, requested_value: str) -> Optional[str]:
+    """Convert Home Assistant ON/OFF payloads to the point's API representation."""
+    normalized = requested_value.strip().upper()
+    if normalized not in ("ON", "OFF", "TRUE", "FALSE", "1", "0"):
+        return None
+    is_on = normalized in ("ON", "TRUE", "1")
+    return (
+        ("true" if is_on else "false")
+        if isinstance(current_value, bool)
+        else ("1" if is_on else "0")
+    )
+
+
+def _parse_numeric_command(point: Dict[str, Any], requested_value: str) -> Optional[str]:
+    """Validate a numeric command against API-provided bounds."""
+    try:
+        numeric_value = float(requested_value)
+    except ValueError:
+        return None
+    if not math.isfinite(numeric_value):
+        return None
+
+    try:
+        minimum = point.get("minValue")
+        maximum = point.get("maxValue")
+        step = point.get("stepValue")
+        if minimum is not None and numeric_value < float(minimum):
+            return None
+        if maximum is not None and numeric_value > float(maximum):
+            return None
+        if minimum is not None and step is not None:
+            step_value = float(step)
+            if step_value > 0:
+                increments = (numeric_value - float(minimum)) / step_value
+                if not math.isclose(increments, round(increments), abs_tol=1e-8):
+                    return None
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid bounds for writable point %s", point.get("parameterId"))
+        return None
+    return requested_value
+
+
 def on_mqtt_disconnect(client, userdata, flags, reason_code, properties):  # pylint: disable=unused-argument
     """Handle MQTT client disconnection event."""
     global MQTT_CONNECTED  # pylint: disable=global-statement
@@ -184,7 +358,7 @@ def on_mqtt_disconnect(client, userdata, flags, reason_code, properties):  # pyl
     logger.error(f"Disconnected from MQTT broker (rc: {reason_code.value})")
 
 
-def create_mqtt_client():
+def create_mqtt_client(userdata: Optional[Any] = None) -> Any:
     """Create and configure MQTT client.
 
     Returns:
@@ -199,6 +373,8 @@ def create_mqtt_client():
 
     client.on_connect = on_mqtt_connect
     client.on_disconnect = on_mqtt_disconnect
+    client.on_message = on_mqtt_message
+    client.user_data_set(userdata)
 
     return client
 
@@ -325,11 +501,11 @@ def publish_sensor_state(mqtt_client, system_id, parameter_id, value, enum_value
     state_value = value
     if enum_values and len(enum_values) > 0:
         # Convert value to string for comparison
-        value_str = str(int(value)) if isinstance(value, float) else str(value)
+        value_str = normalize_enum_value(value)
         # Find matching enum text
         for enum_item in enum_values:
-            if enum_item.get("value") == value_str:
-                state_value = enum_item.get("text", value)
+            if normalize_enum_value(enum_item.get("value")) == value_str:
+                state_value = clean_enum_text(str(enum_item.get("text", value)))
                 break
 
     # Publish state
@@ -448,6 +624,11 @@ def process_data_points(mqtt_client, device_info, system_id, points_data, send_d
             ),
             "enum_values": point.get("enumValues", []),
             "strVal": point.get("strVal"),
+            "writable": point.get("writable") is True,
+            "min_value": point.get("minValue"),
+            "max_value": point.get("maxValue"),
+            "step_value": point.get("stepValue"),
+            "scale_value": point.get("scaleValue"),
         }
 
         if not should_send_parameter(parameter_info):
@@ -456,6 +637,9 @@ def process_data_points(mqtt_client, device_info, system_id, points_data, send_d
             )
             continue
 
+        if parameter_info["writable"]:
+            WRITABLE_POINTS[(str(system_id), str(device_info["id"]), str(param_id))] = point
+
         if PUBLISH_TO_MQTT and mqtt_client is not None:
             if send_discovery:
                 publish_ha_discovery(
@@ -463,17 +647,124 @@ def process_data_points(mqtt_client, device_info, system_id, points_data, send_d
                 )
                 discovery_sent += 1
 
+            is_switch = parameter_info["writable"] and (
+                isinstance(point["value"], bool)
+                or (
+                    not parameter_info["unit"]
+                    and isinstance(point["value"], (int, float))
+                    and point["value"] in (0, 1)
+                )
+            )
+            state_value = parameter_info["value"]
+            is_binary = (
+                is_switch
+                or isinstance(state_value, bool)
+                or (
+                    not parameter_info["writable"]
+                    and parameter_info["value_type"] == "int"
+                    and not parameter_info["unit"]
+                )
+            )
+            if is_binary:
+                state_value = "ON" if bool(state_value) else "OFF"
             publish_sensor_state(
                 mqtt_client,
                 system_id,
                 parameter_info["id"],
-                parameter_info["value"],
+                state_value,
                 parameter_info.get("enum_values", []),
             )
 
         points_published += 1
 
     return points_published, discovery_sent
+
+
+def publish_device_connection(
+    mqtt_client: Any,
+    system_id: str,
+    device_id: str,
+    device_name: str,
+    device_info: Dict[str, Any],
+    device_data: Dict[str, Any],
+    send_discovery: bool,
+) -> None:
+    """Publish a device connectivity binary sensor when the API reports state."""
+    connection_state = device_data.get("connectionState")
+    if connection_state is None:
+        connection_state = device_data.get("connectionStatus")
+    if connection_state in ("Connected", "ONLINE", True, 1):
+        connected = True
+    elif connection_state in ("Disconnected", "OFFLINE", False, 0):
+        connected = False
+    else:
+        connected = None
+
+    connection_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{device_id}/connection"
+    if send_discovery:
+        publish_ha_entity_discovery(
+            mqtt_client,
+            "binary_sensor",
+            f"myuplink_{device_id}_connection",
+            f"{device_name} connection",
+            device_info,
+            connection_topic,
+            f"{MQTT_BASE_TOPIC}/{system_id}/available",
+            {
+                "device_class": "connectivity",
+                "entity_category": "diagnostic",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+            },
+            HA_DISCOVERY_PREFIX,
+        )
+    if connected is not None:
+        mqtt_client.publish(
+            connection_topic,
+            "ON" if connected else "OFF",
+            qos=1,
+            retain=True,
+        )
+
+
+def publish_device_firmware(
+    mqtt_client: Any,
+    system_id: str,
+    device_id: str,
+    device_name: str,
+    device_info: Dict[str, Any],
+    device_data: Dict[str, Any],
+    send_discovery: bool,
+) -> None:
+    """Publish installed and desired firmware as a read-only MQTT update entity."""
+    firmware = device_data.get("firmware") or {}
+    installed_version = firmware.get("currentFwVersion") or device_data.get("currentFwVersion")
+    latest_version = firmware.get("desiredFwVersion") or device_data.get("desiredFwVersion")
+    firmware_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{device_id}/firmware"
+    if send_discovery:
+        publish_ha_entity_discovery(
+            mqtt_client,
+            "update",
+            f"myuplink_{device_id}_firmware",
+            f"{device_name} firmware",
+            device_info,
+            firmware_topic,
+            f"{MQTT_BASE_TOPIC}/{system_id}/available",
+            {"device_class": "firmware", "title": "Firmware"},
+            HA_DISCOVERY_PREFIX,
+        )
+    firmware_state = {}
+    if installed_version:
+        firmware_state["installed_version"] = installed_version
+    if latest_version:
+        firmware_state["latest_version"] = latest_version
+    if firmware_state:
+        mqtt_client.publish(
+            firmware_topic,
+            json.dumps(firmware_state),
+            qos=1,
+            retain=True,
+        )
 
 
 def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=False):
@@ -509,6 +800,10 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
     }
     logger.debug(f"Processing device: {device_name} ({device_id})")
 
+    for key in tuple(WRITABLE_POINTS):
+        if key[:2] == (system_id, str(device_id)):
+            del WRITABLE_POINTS[key]
+
     points_data = get_device_points(myuplink, device_id)
     if points_data is None:
         logger.error(f"Could not retrieve data points for {device_id}")
@@ -520,7 +815,12 @@ def process_device(myuplink, mqtt_client, system_id, device_id, send_discovery=F
     )
 
     if PUBLISH_TO_MQTT and mqtt_client is not None:
-        publish_availability(mqtt_client, system_id, available=True)
+        publish_device_connection(
+            mqtt_client, system_id, device_id, device_name, device_info, device_data, send_discovery
+        )
+        publish_device_firmware(
+            mqtt_client, system_id, device_id, device_name, device_info, device_data, send_discovery
+        )
 
     points_published, discovery_sent = process_installation_date_parameter(
         mqtt_client, device_info, system_id, year, month, day, send_discovery
@@ -617,7 +917,7 @@ def setup_oauth_session():
         return None
 
 
-def connect_mqtt_broker():
+def connect_mqtt_broker(myuplink: Optional[Any] = None) -> Optional[Any]:
     """Connect to MQTT broker.
 
     Returns:
@@ -625,7 +925,7 @@ def connect_mqtt_broker():
 
     """
     logger.info("Connecting to MQTT broker...")
-    mqtt_client = create_mqtt_client()
+    mqtt_client = create_mqtt_client(myuplink)
 
     try:
         mqtt_client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, 60)
@@ -682,6 +982,40 @@ def process_poll_cycle(myuplink, mqtt_client, loop_count):
         system_name = system["name"]
         logger.debug(f"System: {system_name} (ID: {system_id})")
         logger.debug(f"Devices: {len(system['devices'])}")
+
+        if PUBLISH_TO_MQTT and mqtt_client:
+            publish_availability(mqtt_client, system_id, available=True)
+            system_device = {
+                "id": f"system_{system_id}",
+                "name": system_name,
+                "manufacturer": "myUplink",
+                "model": "System",
+            }
+            alarm_topic = f"{MQTT_BASE_TOPIC}/{system_id}/alarm"
+            if send_discovery:
+                publish_ha_entity_discovery(
+                    mqtt_client,
+                    "binary_sensor",
+                    f"myuplink_system_{system_id}_alarm",
+                    f"{system_name} active alarm",
+                    system_device,
+                    alarm_topic,
+                    f"{MQTT_BASE_TOPIC}/{system_id}/available",
+                    {
+                        "device_class": "problem",
+                        "entity_category": "diagnostic",
+                        "payload_on": "ON",
+                        "payload_off": "OFF",
+                    },
+                    HA_DISCOVERY_PREFIX,
+                )
+            if isinstance(system.get("hasAlarm"), bool):
+                mqtt_client.publish(
+                    alarm_topic,
+                    "ON" if system["hasAlarm"] else "OFF",
+                    qos=1,
+                    retain=True,
+                )
 
         # Process each device
         for device in system["devices"]:
@@ -740,7 +1074,7 @@ async def main_loop():
     # Connect to MQTT broker (skip if debug mode without publishing)
     mqtt_client = None
     if PUBLISH_TO_MQTT:
-        mqtt_client = connect_mqtt_broker()
+        mqtt_client = connect_mqtt_broker(myuplink)
         if mqtt_client is None:
             return False
 

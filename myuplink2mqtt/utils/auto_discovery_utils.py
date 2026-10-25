@@ -7,6 +7,9 @@ MQTT discovery payloads for myUplink API devices and parameters.
 import json
 import logging
 import os
+from decimal import Decimal, InvalidOperation
+from threading import Lock
+from typing import Any, Dict, Optional
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -16,6 +19,10 @@ HA_DISCOVERY_PREFIX = os.getenv("HA_DISCOVERY_PREFIX", "homeassistant")
 
 # MQTT Base Topic
 MQTT_BASE_TOPIC = os.getenv("MQTT_BASE_TOPIC", "myuplink")
+
+# Retained discovery configurations are replayed when Home Assistant restarts.
+_DISCOVERY_MESSAGES = {}
+_DISCOVERY_LOCK = Lock()
 
 
 def normalize_unit(unit):
@@ -178,6 +185,14 @@ def build_enum_options(enum_values):
     return options
 
 
+def normalize_enum_value(value: Any) -> str:
+    """Normalize numeric enum representations without losing decimal values."""
+    try:
+        return format(Decimal(str(value)).normalize(), "f")
+    except (InvalidOperation, ValueError):
+        return str(value).strip()
+
+
 def determine_entity_category(parameter_id, parameter_name):
     """Determine Home Assistant entity category based on parameter.
 
@@ -257,25 +272,49 @@ def _add_enum_configuration(payload, parameter_info, state_topic):
     options = build_enum_options(enum_values)
     payload["options"] = options
 
-    # Add command topic for select entity (allows Home Assistant to send commands)
-    # Extract system_id from state_topic (format: myuplink/{system_id}/{parameter_id}/value)
-    state_topic_parts = state_topic.split("/")
-    if len(state_topic_parts) >= 2:
-        system_id = state_topic_parts[1]
-        command_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_info['id']}/set"
-        payload["command_topic"] = command_topic
-
     # Get current value's text representation
-    current_value = parameter_info.get("value")
-    current_text = (
-        str(int(current_value)) if isinstance(current_value, float) else str(current_value)
-    )
+    current_text = normalize_enum_value(parameter_info.get("value"))
 
     # Find the text for current value
     for enum_item in enum_values:
         if enum_item.get("value") == current_text:
             payload["value_template"] = "{{ value }}"
             break
+
+
+def _build_common_discovery_payload(
+    device_info: Dict[str, Any],
+    name: str,
+    unique_id: str,
+    state_topic: str,
+    availability_topic: str,
+) -> Dict[str, Any]:
+    """Build the shared Home Assistant discovery fields."""
+    device = {
+        "identifiers": [f"myuplink_{device_info['id']}"],
+        "manufacturer": device_info.get("manufacturer", "Unknown"),
+        "model": device_info.get("model", "Unknown"),
+    }
+    if device_info.get("serial"):
+        device["serial_number"] = device_info["serial"]
+
+    return {
+        "name": name,
+        "default_entity_id": unique_id,
+        "unique_id": unique_id,
+        "state_topic": state_topic,
+        "availability_topic": availability_topic,
+        "availability_mode": "latest",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "enabled_by_default": True,
+        "origin": {
+            "name": "myUplink2mqtt",
+            "sw": "1.0.0",
+            "url": "https://github.com/j-b-n/myUplink2mqtt",
+        },
+        "device": device,
+    }
 
 
 def build_discovery_payload(device_info, parameter_info, state_topic, availability_topic):
@@ -298,32 +337,10 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     # Clean the parameter name to remove device name prefix
     clean_name = clean_parameter_name(parameter_info["name"], device_info["name"])
 
-    discovery_payload = {
-        "name": clean_name,
-        "default_entity_id": f"myuplink_{device_info['id']}_{parameter_info['id']}",
-        "unique_id": f"myuplink_{device_info['id']}_{parameter_info['id']}",
-        "state_topic": state_topic,
-        "availability_topic": availability_topic,
-        "availability_mode": "latest",
-        "payload_available": "online",
-        "payload_not_available": "offline",
-        "enabled_by_default": True,
-        "origin": {
-            "name": "myUplink2mqtt",
-            "sw": "1.0.0",
-            "url": "https://github.com/j-b-n/myUplink2mqtt",
-        },
-        "device": {
-            "identifiers": [f"myuplink_{device_info['id']}"],
-            # "name": device_info["name"],
-            "manufacturer": device_info["manufacturer"],
-            "model": device_info["model"],
-        },
-    }
-
-    # Add serial number if available
-    if device_info.get("serial"):
-        discovery_payload["device"]["serial_number"] = device_info["serial"]
+    unique_id = f"myuplink_{device_info['id']}_{parameter_info['id']}"
+    discovery_payload = _build_common_discovery_payload(
+        device_info, clean_name, unique_id, state_topic, availability_topic
+    )
 
     # Check if parameter has enumValues for select entity
     if has_enum_values(parameter_info):
@@ -362,15 +379,81 @@ def build_discovery_payload(device_info, parameter_info, state_topic, availabili
     return discovery_payload
 
 
+def _get_discovery_component(parameter_info: Dict[str, Any]) -> str:
+    """Choose a Home Assistant MQTT component based on point capabilities."""
+    writable = parameter_info.get("writable", False)
+    value = parameter_info.get("value")
+    value_type = parameter_info.get("value_type", "string")
+    unit = parameter_info.get("unit", "")
+
+    if has_enum_values(parameter_info) and writable:
+        return "select"
+    if writable and (
+        isinstance(value, bool)
+        or (not unit and isinstance(value, (int, float)) and value in (0, 1))
+    ):
+        return "switch"
+    if writable and isinstance(value, (int, float)) and not isinstance(value, bool):
+        return "number"
+    if has_enum_values(parameter_info):
+        return "sensor"
+    if value_type == "string" and not unit and writable:
+        return "text"
+    if value_type == "bool" or (value_type == "int" and not unit):
+        return "binary_sensor"
+    return "sensor"
+
+
+def _add_writable_configuration(
+    payload: Dict[str, Any],
+    component: str,
+    parameter_info: Dict[str, Any],
+    system_id: str,
+    device_id: str,
+) -> None:
+    """Add the command topic and range for a writable point."""
+    if not parameter_info.get("writable"):
+        return
+
+    payload["command_topic"] = (
+        f"{MQTT_BASE_TOPIC}/{system_id}/{device_id}/{parameter_info['id']}/set"
+    )
+    if component == "number":
+        try:
+            scale = float(parameter_info.get("scale_value") or 1)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid scaleValue for writable point %s; using 1",
+                parameter_info.get("id", "unknown"),
+            )
+            scale = 1
+        minimum = parameter_info.get("min_value")
+        maximum = parameter_info.get("max_value")
+        step = parameter_info.get("step_value")
+        payload.update(
+            {
+                "min": float(minimum if minimum is not None else -30000) * scale,
+                "max": float(maximum if maximum is not None else 30000) * scale,
+                "step": float(step if step is not None else 1) * scale,
+            }
+        )
+    elif component == "switch":
+        payload.update(
+            {
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "state_on": "ON",
+                "state_off": "OFF",
+            }
+        )
+
+
 def publish_ha_discovery(
     mqtt_client, device_info, parameter_info, system_id, discovery_prefix=None
 ):
     """Publish Home Assistant MQTT discovery configuration.
 
-    Determines the appropriate Home Assistant component based on parameter type:
-    - "select" for parameters with enumValues (options list)
-    - "binary_sensor" for boolean or single-value integer parameters
-    - "sensor" for numeric and string parameters
+    Writable points become controls; read-only points remain sensors.
 
     Args:
         mqtt_client: MQTT client instance.
@@ -389,22 +472,7 @@ def publish_ha_discovery(
         # Use provided discovery prefix or fall back to environment variable
         prefix = discovery_prefix if discovery_prefix else HA_DISCOVERY_PREFIX
 
-        # Determine component type
-        # Priority: enum > binary_sensor > text (for string values) > sensor
-        if has_enum_values(parameter_info):
-            component = "select"
-        else:
-            value_type = parameter_info.get("value_type", "string")
-            unit = parameter_info.get("unit", "")
-            is_binary = value_type == "bool" or (value_type == "int" and not unit)
-
-            # Use "text" component for string values with no unit (like dates)
-            if value_type == "string" and not unit:
-                component = "text"
-            elif is_binary:
-                component = "binary_sensor"
-            else:
-                component = "sensor"
+        component = _get_discovery_component(parameter_info)
 
         # Create unique object ID
         unique_id = f"myuplink_{device_info['id']}_{parameter_info['id']}"
@@ -423,16 +491,65 @@ def publish_ha_discovery(
             device_info, parameter_info, state_topic, availability_topic
         )
 
-        # Add command_topic for text entities (required by HA)
-        if component == "text":
-            command_topic = f"{MQTT_BASE_TOPIC}/{system_id}/{parameter_info['id']}/set"
-            discovery_payload["command_topic"] = command_topic
+        _add_writable_configuration(
+            discovery_payload, component, parameter_info, system_id, device_info["id"]
+        )
+
+        if component == "sensor" and has_enum_values(parameter_info):
+            discovery_payload["device_class"] = "enum"
 
         # Log the discovery payload for debugging
         logger.debug(f"Discovery payload for {unique_id}: {json.dumps(discovery_payload)}")
 
-        mqtt_client.publish(discovery_topic, json.dumps(discovery_payload), qos=1, retain=True)
+        _publish_discovery_config(mqtt_client, discovery_topic, discovery_payload)
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error(f"Failed to publish discovery for {parameter_info.get('id', 'unknown')}: {e}")
         return False
+
+
+def _publish_discovery_config(mqtt_client: Any, topic: str, payload: Dict[str, Any]) -> None:
+    """Publish and cache one retained discovery configuration."""
+    serialized = json.dumps(payload)
+    with _DISCOVERY_LOCK:
+        _DISCOVERY_MESSAGES[topic] = serialized
+    mqtt_client.publish(topic, serialized, qos=1, retain=True)
+
+
+def publish_ha_entity_discovery(
+    mqtt_client: Any,
+    component: str,
+    unique_id: str,
+    name: str,
+    device_info: Dict[str, Any],
+    state_topic: str,
+    availability_topic: str,
+    extra_payload: Optional[Dict[str, Any]] = None,
+    discovery_prefix: Optional[str] = None,
+) -> bool:
+    """Publish discovery for a system or device entity that is not a point."""
+    prefix = discovery_prefix or HA_DISCOVERY_PREFIX
+    payload = _build_common_discovery_payload(
+        device_info, name, unique_id, state_topic, availability_topic
+    )
+    if extra_payload:
+        payload.update(extra_payload)
+
+    topic = f"{prefix}/{component}/{unique_id}/config"
+    try:
+        _publish_discovery_config(mqtt_client, topic, payload)
+        return True
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Failed to publish discovery for %s: %s", unique_id, e)
+        return False
+
+
+def publish_cached_discovery(mqtt_client: Any) -> None:
+    """Republish all retained discovery configurations to a restarted HA."""
+    with _DISCOVERY_LOCK:
+        cached_messages = tuple(_DISCOVERY_MESSAGES.items())
+    for topic, payload in cached_messages:
+        try:
+            mqtt_client.publish(topic, payload, qos=1, retain=True)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to republish discovery config %s: %s", topic, e)

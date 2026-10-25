@@ -23,6 +23,10 @@ This project provides a complete bridge between the **myUplink API** (for HVAC/h
 
 - 🔐 **OAuth2 Authentication**: Secure API access with automatic token refresh
 - 🏠 **Home Assistant Integration**: Automatic MQTT discovery for seamless sensor configuration
+- 🎛️ **Writable Controls**: Writable myUplink points are exposed as MQTT number,
+  select, switch, or text entities and sent through the official REST API
+- 🚨 **System Status**: Publishes device connectivity, active system alarms, and
+  firmware versions as Home Assistant entities
 - 🔄 **Continuous Polling**: Configurable polling intervals (default: 2 minutes)
 - 📊 **Complete Data Export**: Publishes all device parameters as individual MQTT topics
 - 🎯 **Smart Sensor Detection**: Intelligent sensor type detection (temperature, humidity, energy, power, etc.)
@@ -183,6 +187,27 @@ export HA_DISCOVERY_PREFIX="homeassistant"     # Default: homeassistant
 # Poll Interval (seconds, default: 120)
 export POLL_INTERVAL="120"                     # Default: 120 (2 minutes)
 ```
+
+### Home Assistant controls and status entities
+
+The bridge exposes writable points only when the official point response marks
+them as `writable`. Home Assistant number, select, switch, and text commands
+are received on topics in this format:
+
+```text
+<MQTT_BASE_TOPIC>/<system_id>/<device_id>/<parameter_id>/set
+```
+
+Commands are validated against the point's available enum values or numeric
+bounds and steps, then sent using the official
+`PATCH /v2/devices/{deviceId}/points` endpoint. The myUplink account must have
+permission to change the point. State is updated on the next poll.
+
+Home Assistant discovery also includes device connectivity and system alarm
+binary sensors, plus a firmware update entity with installed and desired
+versions. Firmware is informational; the bridge does not initiate firmware
+installation. Discovery configurations are replayed when
+`<HA_DISCOVERY_PREFIX>/status` reports `online`.
 
 ## 🏗️ Project Architecture
 

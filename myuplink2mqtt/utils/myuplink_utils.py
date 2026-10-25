@@ -14,6 +14,7 @@ from os import path
 
 import aiohttp
 from myuplink import Auth, MyUplinkAPI
+from requests.exceptions import RequestException
 from requests_oauthlib import OAuth2Session
 
 from .auto_discovery_utils import (
@@ -355,6 +356,49 @@ def get_device_points(myuplink, device_id, parameters=None, language="en-US"):
     except (OSError, ValueError, KeyError) as e:
         logger.error(f"Error retrieving device points for {device_id}: {e}")
         return None
+
+
+def set_device_point(
+    myuplink: OAuth2Session,
+    device_id: str,
+    parameter_id: str,
+    value: str,
+) -> bool:
+    """Set one writable device point through the official myUplink REST API.
+
+    Args:
+        myuplink (OAuth2Session): Authenticated OAuth2 session.
+        device_id (str): Device ID.
+        parameter_id (str): Writable parameter ID.
+        value (str): New value as a string, as required by the API.
+
+    Returns:
+        bool: True when myUplink accepts the update, otherwise False.
+
+    """
+    url = f"{MYUPLINK_API_BASE}/v2/devices/{device_id}/points"
+    try:
+        response = myuplink.patch(
+            url,
+            json={str(parameter_id): str(value)},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if not 200 <= response.status_code < 300:
+            logger.error(
+                "Failed to set device point %s on %s. HTTP Status: %s; %s",
+                parameter_id,
+                device_id,
+                response.status_code,
+                response.text,
+            )
+            return False
+
+        logger.info("Updated device point %s on %s", parameter_id, device_id)
+        return True
+    except (OSError, ValueError, KeyError, RequestException) as e:
+        logger.error("Error setting device point %s on %s: %s", parameter_id, device_id, e)
+        return False
 
 
 def clean_parameter_name(parameter_name):

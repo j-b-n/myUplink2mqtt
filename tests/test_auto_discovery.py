@@ -14,6 +14,7 @@ import pytest
 # Add project root to path before importing local modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from myuplink2mqtt.utils import auto_discovery_utils  # pylint: disable=wrong-import-position
 from myuplink2mqtt.utils.auto_discovery_utils import (  # pylint: disable=wrong-import-position
     build_discovery_payload,
     clean_parameter_name,
@@ -23,7 +24,9 @@ from myuplink2mqtt.utils.auto_discovery_utils import (  # pylint: disable=wrong-
     get_parameter_id_to_device_class_mapping,
     get_unit_to_device_class_mapping,
     normalize_unit,
+    publish_cached_discovery,
     publish_ha_discovery,
+    publish_ha_entity_discovery,
 )
 
 
@@ -584,6 +587,109 @@ class TestPublishHaDiscovery:
         # Should still publish successfully with defaults
         assert result is True
         mock_client.publish.assert_called_once()
+
+
+class TestWritableAndSystemDiscovery:
+    """Test writable controls and discovery replay metadata."""
+
+    def setup_method(self):
+        auto_discovery_utils._DISCOVERY_MESSAGES.clear()
+        self.device_info = {
+            "id": "device-123",
+            "name": "Heat pump",
+            "manufacturer": "Nibe",
+            "model": "F-series",
+        }
+
+    def test_writable_numeric_point_creates_number_control(self):
+        client = MagicMock()
+        point = {
+            "id": "40004",
+            "name": "Target temperature",
+            "value": 20.0,
+            "unit": "°C",
+            "value_type": "float",
+            "writable": True,
+            "min_value": 5,
+            "max_value": 30,
+            "step_value": 0.5,
+            "scale_value": "1",
+        }
+
+        assert publish_ha_discovery(client, self.device_info, point, "system-1")
+        topic, serialized = client.publish.call_args.args[:2]
+        payload = json.loads(serialized)
+
+        assert topic.startswith("homeassistant/number/")
+        assert payload["command_topic"] == "myuplink/system-1/device-123/40004/set"
+        assert payload["min"] == 5
+        assert payload["max"] == 30
+        assert payload["step"] == 0.5
+
+    def test_writable_boolean_point_creates_switch(self):
+        client = MagicMock()
+        point = {
+            "id": "40005",
+            "name": "Enable heating",
+            "value": False,
+            "unit": "",
+            "value_type": "bool",
+            "writable": True,
+        }
+
+        assert publish_ha_discovery(client, self.device_info, point, "system-1")
+        topic, serialized = client.publish.call_args.args[:2]
+        payload = json.loads(serialized)
+
+        assert topic.startswith("homeassistant/switch/")
+        assert payload["payload_on"] == "ON"
+        assert payload["payload_off"] == "OFF"
+
+    def test_read_only_enum_stays_a_sensor(self):
+        client = MagicMock()
+        point = {
+            "id": "40006",
+            "name": "Operating mode",
+            "value": "1",
+            "unit": "",
+            "value_type": "string",
+            "writable": False,
+            "enum_values": [
+                {"value": "1", "text": "Auto"},
+                {"value": "2", "text": "Manual"},
+            ],
+        }
+
+        assert publish_ha_discovery(client, self.device_info, point, "system-1")
+        topic, serialized = client.publish.call_args.args[:2]
+        payload = json.loads(serialized)
+
+        assert topic.startswith("homeassistant/sensor/")
+        assert payload["device_class"] == "enum"
+        assert payload["options"] == ["Auto", "Manual"]
+        assert "command_topic" not in payload
+
+    def test_non_point_entity_discovery_is_replayed(self):
+        client = MagicMock()
+        publish_ha_entity_discovery(
+            client,
+            "update",
+            "myuplink_device-123_firmware",
+            "Heat pump firmware",
+            self.device_info,
+            "myuplink/system-1/device-123/firmware",
+            "myuplink/system-1/available",
+            {"device_class": "firmware"},
+        )
+        client.reset_mock()
+
+        publish_cached_discovery(client)
+
+        client.publish.assert_called_once()
+        assert client.publish.call_args.args[0] == (
+            "homeassistant/update/myuplink_device-123_firmware/config"
+        )
+        assert client.publish.call_args.kwargs["retain"] is True
 
 
 if __name__ == "__main__":

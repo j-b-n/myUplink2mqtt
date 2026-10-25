@@ -21,6 +21,7 @@ from myuplink2mqtt.utils.myuplink_utils import (
     get_systems,
     load_config,
     load_oauth_token,
+    set_device_point,
     token_saver,
 )
 
@@ -461,6 +462,29 @@ class TestGetDevicePoints:
         points = get_device_points(mock_session, "device-001")
 
         assert points is None
+
+
+class TestSetDevicePoint:
+    """Test writes to the official myUplink device-points endpoint."""
+
+    def test_success_uses_documented_patch_body(self):
+        session = MagicMock()
+        session.patch.return_value.status_code = 204
+
+        assert set_device_point(session, "device-001", "40004", "21.5") is True
+
+        session.patch.assert_called_once_with(
+            "https://api.myuplink.com/v2/devices/device-001/points",
+            json={"40004": "21.5"},
+            timeout=30,
+        )
+
+    def test_api_error_returns_false(self):
+        session = MagicMock()
+        session.patch.return_value.status_code = 403
+        session.patch.return_value.text = "Forbidden"
+
+        assert set_device_point(session, "device-001", "40004", "21.5") is False
 
 
 # ============================================================================
@@ -1048,4 +1072,3 @@ class TestAddAutoDiscoveryToPoints:
 
         # Auto discovery should still be added (might be None on error)
         assert "autoDiscovery" in points_data[0]
-
