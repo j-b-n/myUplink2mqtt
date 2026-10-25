@@ -10,8 +10,13 @@ User=pi
 # Set working directory to the project root
 WorkingDirectory=/home/pi/python/myUplink2mqtt
 
-# Use 'simple' type for a standard script with main loop
-Type=simple
+# 'notify' lets the app report readiness and ping the watchdog (sd_notify)
+Type=notify
+NotifyAccess=main
+
+# Restart if no completed poll cycle is reported within 5 minutes
+# (poll interval is 60s; keep well above POLL_INTERVAL plus API timeouts)
+WatchdogSec=300
 
 # Execute the script using the virtual environment's Python
 # If no venv exists, this will fail - user must run install script to set up properly

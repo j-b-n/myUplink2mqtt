@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import logging
 import os
+import socket
 import sys
 import time
 
@@ -709,6 +710,26 @@ def log_startup_info():
         logger.debug("Press Ctrl+C to stop\n")
 
 
+def sd_notify(message):
+    """Send a status message to systemd (no-op when not run under a notify service).
+
+    Args:
+        message: Notification string, e.g. "READY=1" or "WATCHDOG=1".
+
+    """
+    addr = os.getenv("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr.startswith("@"):
+        addr = "\0" + addr[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            sock.connect(addr)
+            sock.sendall(message.encode())
+    except OSError as e:
+        logger.warning(f"sd_notify failed: {e}")
+
+
 async def main_loop():
     """Poll myUplink API and publish data to MQTT."""
     # Set up OAuth session
@@ -726,6 +747,8 @@ async def main_loop():
     # Log startup information
     log_startup_info()
 
+    sd_notify("READY=1")
+
     loop_count = 0
     try:
         while True:
@@ -734,6 +757,8 @@ async def main_loop():
             logger.info(
                 f"Poll cycle {loop_count} complete (entities published: {entities_published})"
             )
+            # Only ping after a completed cycle so a hung poll triggers a restart
+            sd_notify("WATCHDOG=1")
 
             # Exit after first cycle if RUN_ONCE mode
             if RUN_ONCE:

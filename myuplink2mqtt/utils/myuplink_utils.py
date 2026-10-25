@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # HTTP status code for successful requests
 HTTP_STATUS_OK = 200
+HTTP_TIMEOUT = 30  # seconds; prevents a stalled connection from hanging the poll loop
 
 # myUplink API base URL
 MYUPLINK_API_BASE = "https://api.myuplink.com"
@@ -210,7 +211,9 @@ def get_device_brands(myuplink, devices):
         device_id = device_info["id"]
         try:
             # Get detailed device information
-            device_response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/devices/{device_id}")
+            device_response = myuplink.get(
+                f"{MYUPLINK_API_BASE}/v2/devices/{device_id}", timeout=HTTP_TIMEOUT
+            )
             if device_response.status_code != HTTP_STATUS_OK:
                 brands.append(f"Device {device_id} (API error)")
                 continue
@@ -275,7 +278,7 @@ def get_systems(myuplink):
 
     """
     try:
-        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/systems/me")
+        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/systems/me", timeout=HTTP_TIMEOUT)
 
         if response.status_code != HTTP_STATUS_OK:
             logger.error(f"Failed to get systems. HTTP Status: {response.status_code}")
@@ -302,7 +305,7 @@ def get_device_details(myuplink, device_id):
 
     """
     try:
-        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/devices/{device_id}")
+        response = myuplink.get(f"{MYUPLINK_API_BASE}/v2/devices/{device_id}", timeout=HTTP_TIMEOUT)
 
         if response.status_code != HTTP_STATUS_OK:
             logger.error(f"Failed to get device details. HTTP Status: {response.status_code}")
@@ -341,7 +344,7 @@ def get_device_points(myuplink, device_id, parameters=None, language="en-US"):
         if query_params:
             url += "?" + "&".join(query_params)
 
-        response = myuplink.get(url)
+        response = myuplink.get(url, timeout=HTTP_TIMEOUT)
 
         if response.status_code != HTTP_STATUS_OK:
             logger.error(f"Failed to get device points. HTTP Status: {response.status_code}")
